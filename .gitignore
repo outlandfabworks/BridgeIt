@@ -1,0 +1,36 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+*.spec.bak
+.venv/
+venv/
+env/
+*.egg
+.eggs/
+
+# PyInstaller
+*.spec.bak
+dist/
+build/
+
+# rembg model cache
+u2net*.onnx
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Test outputs
+*_nobg.png
+*_contours.png
+*.svg.bak

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "bridgeit"
+version = "1.0.0"
+description = "Convert images to fabrication-ready SVGs with automatic bridge generation"
+requires-python = ">=3.10"
+dependencies = [
+    "PyQt6>=6.6.0",
+    "rembg>=2.0.50",
+    "opencv-python>=4.9.0",
+    "shapely>=2.0.3",
+    "svgwrite>=1.4.3",
+    "Pillow>=10.2.0",
+    "numpy>=1.26.0",
+    "onnxruntime>=1.17.0",
+]
+
+[project.scripts]
+bridgeit = "bridgeit.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bridgeit*"]

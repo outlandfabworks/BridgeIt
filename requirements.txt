@@ -1,0 +1,8 @@
+PyQt6>=6.6.0
+rembg>=2.0.50
+opencv-python>=4.9.0
+shapely>=2.0.3
+svgwrite>=1.4.3
+Pillow>=10.2.0
+numpy>=1.26.0
+onnxruntime>=1.17.0
