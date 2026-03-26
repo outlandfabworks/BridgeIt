@@ -407,7 +407,7 @@ class MainWindow(QMainWindow):
             self._pending_settings = None
             self._run_pipeline(source=None, preview_only=True, settings=s)
 
-    @pyqtSlot(object)
+    @pyqtSlot(str)
     def _on_pipeline_error(self, message: str) -> None:
         self._set_busy(False)
         self._set_status(f"Error: {message}", error=True)
