@@ -131,6 +131,7 @@ class MainWindow(QMainWindow):
         self._preview_svg: Optional[str] = None
         self._excluded_paths: set = set()
         self._manual_bridges: list = []
+        self._deleted_auto_bridges: set = set()
 
         self._build_ui()
         self._apply_theme()
@@ -421,17 +422,21 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot()
     def _on_canvas_modified(self) -> None:
-        """User deleted paths or added a manual bridge — reload canvas."""
+        """User deleted paths/bridges or added a manual bridge — reload canvas."""
         if not self._last_result or not self._last_result.bridge_result:
             return
-        self._excluded_paths = self._preview.canvas.get_excluded()
-        self._manual_bridges = self._preview.canvas.get_manual_bridges()
+        canvas = self._preview.canvas
+        self._excluded_paths = canvas.get_excluded()
+        self._manual_bridges = canvas.get_manual_bridges()
+        self._deleted_auto_bridges = canvas.get_deleted_auto_bridges()
+        deleted_auto = self._deleted_auto_bridges
         br = self._last_result.bridge_result
-        self._preview.canvas.load(
+        canvas.load(
             br.paths,
             br.bridges,
             excluded=self._excluded_paths,
             manual_bridges=self._manual_bridges,
+            deleted_auto_bridges=deleted_auto,
         )
 
     @pyqtSlot(str)
@@ -500,11 +505,13 @@ class MainWindow(QMainWindow):
         if result.bridge_result:
             self._excluded_paths = set()
             self._manual_bridges = []
+            self._deleted_auto_bridges = set()
             self._preview.canvas.load(
                 result.bridge_result.paths,
                 result.bridge_result.bridges,
                 excluded=self._excluded_paths,
                 manual_bridges=self._manual_bridges,
+                deleted_auto_bridges=self._deleted_auto_bridges,
             )
             self._btn_view_svg.setEnabled(True)
             self._btn_delete.setEnabled(True)
