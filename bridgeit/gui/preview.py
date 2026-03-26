@@ -216,12 +216,14 @@ class PreviewPanel(QStackedWidget):
 
     def show_image_from_pil(self, pil_image) -> None:
         """Convert a PIL Image to QPixmap and display it."""
-        from PIL.ImageQt import ImageQt
         from PyQt6.QtGui import QImage
 
         if pil_image.mode != "RGBA":
             pil_image = pil_image.convert("RGBA")
-        qt_image = ImageQt(pil_image)
+        w, h = pil_image.size
+        # Use raw bytes so Qt owns the data independently (avoids double-free)
+        data = bytes(pil_image.tobytes("raw", "RGBA"))
+        qt_image = QImage(data, w, h, w * 4, QImage.Format.Format_RGBA8888).copy()
         pixmap = QPixmap.fromImage(qt_image)
         self.show_image(pixmap)
 
