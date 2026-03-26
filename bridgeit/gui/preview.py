@@ -199,6 +199,9 @@ class PreviewPanel(QStackedWidget):
     def show_canvas(self) -> None:
         self.setCurrentIndex(self.PAGE_CANVAS)
 
+    def is_canvas_visible(self) -> bool:
+        return self.currentIndex() == self.PAGE_CANVAS
+
     def show_image_from_pil(self, pil_image) -> None:
         """Convert a PIL Image to QPixmap and display it."""
         from PyQt6.QtGui import QImage

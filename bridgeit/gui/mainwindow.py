@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from PIL import Image
-from PyQt6.QtCore import QObject, QThread, Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QObject, QThread, QTimer, Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QAction, QColor, QFont, QPalette
 from PyQt6.QtWidgets import (
     QApplication,
@@ -133,6 +133,12 @@ class MainWindow(QMainWindow):
         self._manual_bridges: list = []
         self._deleted_auto_bridges: set = set()
         self._bridge_confirming: bool = False
+
+        # Debounce timer for live settings updates
+        self._settings_timer = QTimer()
+        self._settings_timer.setSingleShot(True)
+        self._settings_timer.setInterval(250)
+        self._settings_timer.timeout.connect(self._on_settings_debounced)
 
         self._build_ui()
         self._apply_theme()
@@ -346,8 +352,17 @@ class MainWindow(QMainWindow):
     def _on_settings_changed(self, settings: PipelineSettings) -> None:
         if self._nobg_image is None:
             return
+        self._pending_settings = settings
+        self._settings_timer.start()   # debounce — resets if fired again within 250 ms
+
+    @pyqtSlot()
+    def _on_settings_debounced(self) -> None:
+        if self._pending_settings is None:
+            return
+        settings = self._pending_settings
+        self._pending_settings = None
         if self._worker_thread and self._worker_thread.isRunning():
-            # Queue the settings for after current run finishes
+            # Still busy — leave _pending_settings so it re-queues after current run
             self._pending_settings = settings
             return
         self._run_pipeline(source=None, preview_only=True, settings=settings)
@@ -416,9 +431,8 @@ class MainWindow(QMainWindow):
     def _on_toggle_bridge_mode(self) -> None:
         canvas = self._preview.canvas
         if self._bridge_confirming:
-            # Button now acts as "Confirm Bridge"
-            canvas.confirm_pending_bridge()
-            self._bridge_confirming = False
+            # Button acts as "Confirm Bridges"
+            canvas.confirm_staged_bridges()
             return
         if canvas.mode == CanvasMode.BRIDGE:
             canvas.set_mode(CanvasMode.SELECT)
@@ -452,26 +466,37 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(str)
     def _on_canvas_mode_changed(self, mode_str: str) -> None:
-        hints = {
-            "select":         "Select mode — click paths to select, Delete to remove",
-            "bridge":         "Bridge mode — click a point on a path to start a bridge",
-            "bridge_pt2":     "Bridge mode — click second point on a path to complete",
-            "bridge_confirm": "Bridge ready — click Confirm Bridge (or Enter) to apply, Escape to cancel",
-        }
-        self._set_status(hints.get(mode_str, ""))
+        canvas = self._preview.canvas
+        n = canvas.staged_count
 
         if mode_str == "bridge_confirm":
             self._bridge_confirming = True
             self._btn_add_bridge.setChecked(True)
-            self._btn_add_bridge.setText("Confirm Bridge")
-        elif mode_str in ("bridge", "bridge_pt2"):
+            label = f"Confirm Bridges ({n})" if n > 1 else "Confirm Bridge"
+            self._btn_add_bridge.setText(label)
+            self._set_status(
+                f"{n} bridge{'s' if n != 1 else ''} staged — "
+                "place more, or press Enter / Confirm to apply  ·  Escape to discard"
+            )
+        elif mode_str == "bridge_pt2":
             self._bridge_confirming = False
             self._btn_add_bridge.setChecked(True)
             self._btn_add_bridge.setText("Cancel Bridge")
+            self._set_status(
+                "Click second point to complete bridge  ·  hold Shift for straight lines"
+            )
+        elif mode_str == "bridge":
+            self._bridge_confirming = False
+            self._btn_add_bridge.setChecked(True)
+            self._btn_add_bridge.setText("Cancel Bridge")
+            self._set_status(
+                "Click a point on a path to start a bridge  ·  hold Shift for straight lines"
+            )
         else:  # select
             self._bridge_confirming = False
             self._btn_add_bridge.setChecked(False)
             self._btn_add_bridge.setText("Add Bridge")
+            self._set_status("Select mode — click paths to select, Delete to remove")
 
     # ------------------------------------------------------------------
     # Pipeline execution
@@ -526,10 +551,13 @@ class MainWindow(QMainWindow):
             self._nobg_image = result.nobg_image
 
         # Load canvas with all paths + auto bridges
+        on_canvas = self._preview.is_canvas_visible()
         if result.bridge_result:
-            self._excluded_paths = set()
-            self._manual_bridges = []
-            self._deleted_auto_bridges = set()
+            if not on_canvas:
+                # Fresh load — reset any prior edits
+                self._excluded_paths = set()
+                self._manual_bridges = []
+                self._deleted_auto_bridges = set()
             self._preview.canvas.load(
                 result.bridge_result.paths,
                 result.bridge_result.bridges,
@@ -541,10 +569,11 @@ class MainWindow(QMainWindow):
             self._btn_delete.setEnabled(True)
             self._btn_add_bridge.setEnabled(True)
 
-        # Stay on original image view — user switches to canvas manually
+        # Only switch to image view if not already on canvas
         if self._nobg_image:
-            self._preview.show_image_from_pil(self._nobg_image)
             self._btn_view_image.setEnabled(True)
+            if not on_canvas:
+                self._preview.show_image_from_pil(self._nobg_image)
 
         # Update info panel
         islands = len(result.analysis.islands) if result.analysis else 0
@@ -558,11 +587,9 @@ class MainWindow(QMainWindow):
             success=True,
         )
 
-        # Process pending settings update
+        # If a settings change arrived while pipeline was running, re-run now
         if self._pending_settings:
-            s = self._pending_settings
-            self._pending_settings = None
-            self._run_pipeline(source=None, preview_only=True, settings=s)
+            self._settings_timer.start()
 
     @pyqtSlot(str)
     def _on_pipeline_error(self, message: str) -> None:

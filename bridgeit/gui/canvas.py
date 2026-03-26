@@ -8,11 +8,15 @@ SELECT mode (default):
   • Escape deselects everything
 
 BRIDGE mode:
-  • Move mouse — white snap dot shows where the bridge endpoint will land
-  • First click places point A (snapped to nearest path, yellow dot)
-  • Second click places point B (snapped) and shows the bridge rectangle preview
-  • Press Enter or click "Confirm Bridge" to accept; Escape cancels the pending
-    points (but stays in bridge mode); double-Escape exits bridge mode entirely
+  • White snap dot follows cursor, snapping to the nearest path segment
+  • Hold Shift to constrain the bridge angle to 0°/45°/90°/135° (dashed guide shown)
+  • First click places point A (snapped, yellow dot)
+  • Additional clicks each place a new bridge — all staged bridges shown as white
+    preview rectangles immediately
+  • Click on a staged bridge to select it; Delete removes it from staging
+  • Press Enter or click "Confirm Bridges" to commit all staged bridges as real cut paths
+  • Escape cancels the pending first point, or clears all staged bridges; a second
+    Escape with nothing pending exits bridge mode entirely
 
 Middle-click drag to pan.  Scroll wheel to zoom.
 Mouse hover over the canvas gives it keyboard focus automatically.
@@ -48,9 +52,10 @@ class Mode(Enum):
 _COL_NORMAL      = QColor("#ffffff")
 _COL_PATH_SEL    = QColor("#f59e0b")   # amber  — selected path
 _COL_HOVER       = QColor("#a78bfa")   # purple — hovered path/bridge
-_COL_BRIDGE      = QColor("#22c55e")   # green  — bridge marker
+_COL_BRIDGE      = QColor("#22c55e")   # green  — auto bridge marker
 _COL_BRIDGE_SEL  = QColor("#ef4444")   # red    — selected bridge
-_COL_PENDING     = QColor("#fbbf24")   # yellow — first bridge click
+_COL_STAGED_SEL  = QColor("#f59e0b")   # amber  — selected staged bridge
+_COL_PENDING     = QColor("#fbbf24")   # yellow — first bridge click dot
 _COL_SNAP        = QColor("#ffffff")   # white  — snap indicator
 _COL_BG          = QColor(PREVIEW_BG_COLOR)
 
@@ -68,7 +73,6 @@ def _closest_point_on_segment(
     ax: float, ay: float,
     bx: float, by: float,
 ) -> Tuple[float, float]:
-    """Return the point on segment AB closest to P."""
     dx, dy = bx - ax, by - ay
     denom = dx * dx + dy * dy
     if denom < 1e-10:
@@ -82,7 +86,6 @@ def _compute_bridge_rect(
     pt2: Tuple[float, float],
     width_px: float,
 ) -> Optional[List[Tuple[float, float]]]:
-    """Return the four corners (+closing point) of the bridge rectangle."""
     dx = pt2[0] - pt1[0]
     dy = pt2[1] - pt1[1]
     length = math.hypot(dx, dy)
@@ -96,6 +99,20 @@ def _compute_bridge_rect(
     c = (pt2[0] - perp_x * half, pt2[1] - perp_y * half)
     d = (pt2[0] + perp_x * half, pt2[1] + perp_y * half)
     return [a, b, c, d, a]
+
+
+def _constrain_to_45(
+    origin: Tuple[float, float],
+    pt: Tuple[float, float],
+) -> Tuple[float, float]:
+    """Snap pt to the nearest 45°-multiple direction from origin."""
+    dx = pt[0] - origin[0]
+    dy = pt[1] - origin[1]
+    angle = math.atan2(dy, dx)
+    snapped = round(angle / (math.pi / 4)) * (math.pi / 4)
+    dist = math.hypot(dx, dy)
+    return (origin[0] + dist * math.cos(snapped),
+            origin[1] + dist * math.sin(snapped))
 
 
 # ── Path item ─────────────────────────────────────────────────────────────
@@ -115,14 +132,70 @@ class _PathItem(QGraphicsPathItem):
         self.path_index = index
         self._sel = False
         self.setAcceptHoverEvents(True)
-        # Alpha=1 fill: invisible but still triggers containment hit tests
         self.setBrush(QBrush(QColor(255, 255, 255, 1)))
         self._refresh_pen()
 
     def _refresh_pen(self) -> None:
         c = _COL_PATH_SEL if self._sel else _COL_NORMAL
-        w = _W_SELECTED   if self._sel else _W_NORMAL
-        self.setPen(QPen(c, w))
+        self.setPen(QPen(c, _W_SELECTED if self._sel else _W_NORMAL))
+
+    def toggle(self) -> bool:
+        self._sel = not self._sel
+        self._refresh_pen()
+        return self._sel
+
+    def set_sel(self, v: bool) -> None:
+        self._sel = v
+        self._refresh_pen()
+
+    @property
+    def selected(self) -> bool:
+        return self._sel
+
+    def hoverEnterEvent(self, event) -> None:
+        if not self._sel:
+            self.setPen(QPen(_COL_HOVER, _W_NORMAL))
+
+    def hoverLeaveEvent(self, event) -> None:
+        self._refresh_pen()
+
+
+# ── Staged bridge item (pending confirmation) ─────────────────────────────
+
+class _StagedBridgeItem(QGraphicsPathItem):
+    """Preview rect for a bridge that has been placed but not yet confirmed.
+
+    Visually: white outline + subtle green tint.
+    Selectable: click to highlight amber, Delete removes from staging.
+    """
+
+    def __init__(
+        self,
+        pt1: Tuple[float, float],
+        pt2: Tuple[float, float],
+        staged_index: int,
+        width_px: float,
+    ) -> None:
+        self.bridge_type  = "staged"
+        self.staged_index = staged_index
+        self._sel = False
+
+        rect_pts = _compute_bridge_rect(pt1, pt2, width_px)
+        qpath = QPainterPath()
+        if rect_pts:
+            qpath.moveTo(rect_pts[0][0], rect_pts[0][1])
+            for x, y in rect_pts[1:]:
+                qpath.lineTo(x, y)
+            qpath.closeSubpath()
+
+        super().__init__(qpath)
+        self.setAcceptHoverEvents(True)
+        self.setBrush(QBrush(QColor(34, 197, 94, 30)))
+        self._refresh_pen()
+
+    def _refresh_pen(self) -> None:
+        c = _COL_STAGED_SEL if self._sel else _COL_BRIDGE
+        self.setPen(QPen(c, _W_SELECTED if self._sel else _W_NORMAL))
 
     def toggle(self) -> bool:
         self._sel = not self._sel
@@ -148,11 +221,7 @@ class _PathItem(QGraphicsPathItem):
 # ── Confirmed manual bridge item ──────────────────────────────────────────
 
 class _ConfirmedBridgeItem(QGraphicsPathItem):
-    """A confirmed manual bridge rendered as its actual white cut rectangle.
-
-    bridge_type  = "manual"
-    bridge_index = index in _manual_bridges
-    """
+    """A confirmed manual bridge shown as its actual white cut rectangle."""
 
     def __init__(
         self,
@@ -180,8 +249,7 @@ class _ConfirmedBridgeItem(QGraphicsPathItem):
 
     def _refresh_pen(self) -> None:
         c = _COL_PATH_SEL if self._sel else _COL_NORMAL
-        w = _W_SELECTED   if self._sel else _W_NORMAL
-        self.setPen(QPen(c, w))
+        self.setPen(QPen(c, _W_SELECTED if self._sel else _W_NORMAL))
 
     def toggle(self) -> bool:
         self._sel = not self._sel
@@ -204,16 +272,10 @@ class _ConfirmedBridgeItem(QGraphicsPathItem):
         self._refresh_pen()
 
 
-# ── Bridge marker item ────────────────────────────────────────────────────
+# ── Auto bridge marker item ───────────────────────────────────────────────
 
 class _BridgeMarkerItem(QGraphicsPathItem):
-    """A selectable bridge marker — dashed line + two endpoint dots.
-
-    Used for auto-generated bridges only.
-
-    bridge_type:  "auto"
-    bridge_index: index in the auto bridges list
-    """
+    """A selectable auto-generated bridge marker — dashed line + endpoint dots."""
 
     def __init__(
         self,
@@ -225,7 +287,6 @@ class _BridgeMarkerItem(QGraphicsPathItem):
         self._pt1 = QPointF(pt1[0], pt1[1])
         self._pt2 = QPointF(pt2[0], pt2[1])
 
-        # Build hit-zone path: wide stroke corridor + endpoint circles
         line = QPainterPath()
         line.moveTo(self._pt1)
         line.lineTo(self._pt2)
@@ -241,29 +302,21 @@ class _BridgeMarkerItem(QGraphicsPathItem):
         self.bridge_type  = bridge_type
         self.bridge_index = bridge_index
         self._sel = False
+        self._hover = False
 
-        # Fully transparent — only used for hit detection
         self.setPen(QPen(Qt.PenStyle.NoPen))
         self.setBrush(QBrush(QColor(0, 0, 0, 0)))
         self.setAcceptHoverEvents(True)
 
-    # ── Paint the visible bridge ─────────────────────────────────────────
-
     def paint(self, painter: QPainter, option, widget=None) -> None:
-        col = _COL_BRIDGE_SEL if self._sel else _color_for(self)
-
-        # Dashed connecting line
+        col = _COL_BRIDGE_SEL if self._sel else (_COL_HOVER if self._hover else _COL_BRIDGE)
         painter.setPen(QPen(col, 2.0, Qt.PenStyle.DashLine))
         painter.drawLine(self._pt1, self._pt2)
-
-        # Endpoint dots
         painter.setPen(QPen(Qt.PenStyle.NoPen))
         painter.setBrush(QBrush(col))
         r = float(_MARKER_R)
         painter.drawEllipse(self._pt1, r, r)
         painter.drawEllipse(self._pt2, r, r)
-
-    # ── Selection ────────────────────────────────────────────────────────
 
     def toggle(self) -> bool:
         self._sel = not self._sel
@@ -289,21 +342,17 @@ class _BridgeMarkerItem(QGraphicsPathItem):
         self.update()
 
 
-def _color_for(item: _BridgeMarkerItem) -> QColor:
-    if item._sel:
-        return _COL_BRIDGE_SEL
-    if getattr(item, "_hover", False):
-        return _COL_HOVER
-    return _COL_BRIDGE
-
-
 # ── Interactive canvas ────────────────────────────────────────────────────
+
+_AnyBridgeItem = Union[_BridgeMarkerItem, _ConfirmedBridgeItem, _StagedBridgeItem]
+_AnyItem = Union[_PathItem, _AnyBridgeItem]
+
 
 class InteractiveCanvas(QGraphicsView):
     """Zoomable, pannable canvas for selecting and editing cut paths."""
 
     paths_modified = pyqtSignal()    # paths deleted, bridge added/deleted
-    mode_changed   = pyqtSignal(str) # "select" | "bridge" | "bridge_pt2" | "bridge_confirm"
+    mode_changed   = pyqtSignal(str) # "select"|"bridge"|"bridge_pt2"|"bridge_confirm"
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -324,20 +373,24 @@ class InteractiveCanvas(QGraphicsView):
         self._items: List[_PathItem] = []
         self._excluded: Set[int] = set()
 
-        # Bridge state
-        self._bridge_items: List[Union[_BridgeMarkerItem, _ConfirmedBridgeItem]] = []
+        # Confirmed bridge state
+        self._bridge_items: List[_AnyBridgeItem] = []
         self._deleted_auto_bridges: Set[int] = set()
-        # Each entry: (pt1, pt2, width_px)
-        self._manual_bridges: List[Tuple] = []
+        self._manual_bridges: List[Tuple] = []  # (pt1, pt2, width_px)
 
-        # Bridge-draw in progress
+        # Staged (not-yet-confirmed) bridges
+        self._staged_data: List[Tuple[Tuple, Tuple]] = []   # (pt1, pt2)
+        self._staged_items: List[_StagedBridgeItem] = []
+
+        # Active first-point placement
         self._bridge_pt1: Optional[Tuple[float, float]] = None
-        self._bridge_pt2: Optional[Tuple[float, float]] = None  # set when awaiting confirm
         self._pending_dot: Optional[QGraphicsEllipseItem] = None
-        self._pending_rect: Optional[QGraphicsPathItem] = None  # preview rect shown during confirm
-        self._snap_dot: Optional[QGraphicsEllipseItem] = None   # hover snap indicator
 
-        # Bridge width used when placing a new bridge (set by mainwindow)
+        # Hover aids
+        self._snap_dot: Optional[QGraphicsEllipseItem] = None
+        self._guide_line: Optional[QGraphicsPathItem] = None   # Shift-constrain guide
+
+        # Bridge width used when placing (set by mainwindow before entering bridge mode)
         self._bridge_width_px: float = 5.0
 
         # Rubber-band selection
@@ -356,6 +409,10 @@ class InteractiveCanvas(QGraphicsView):
     def bridge_width_px(self, v: float) -> None:
         self._bridge_width_px = max(0.5, v)
 
+    @property
+    def staged_count(self) -> int:
+        return len(self._staged_data)
+
     def load(
         self,
         paths: List[Path2D],
@@ -367,11 +424,12 @@ class InteractiveCanvas(QGraphicsView):
         self._scene.clear()
         self._items.clear()
         self._bridge_items.clear()
+        self._staged_items.clear()
+        self._staged_data.clear()
         self._pending_dot = None
-        self._pending_rect = None
         self._snap_dot = None
+        self._guide_line = None
         self._bridge_pt1 = None
-        self._bridge_pt2 = None
 
         if excluded is not None:
             self._excluded = set(excluded)
@@ -432,6 +490,20 @@ class InteractiveCanvas(QGraphicsView):
     def delete_selected(self) -> None:
         changed = False
 
+        # Remove staged bridges that are selected (no paths_modified needed — not committed)
+        staged_sel = [i for i, s in enumerate(self._staged_items) if s.selected]
+        for i in reversed(staged_sel):
+            self._scene.removeItem(self._staged_items[i])
+            self._staged_items.pop(i)
+            self._staged_data.pop(i)
+            changed = True
+        # Re-index
+        for j, s in enumerate(self._staged_items):
+            s.staged_index = j
+        if staged_sel:
+            self._emit_mode_hint()
+            return  # staged removals don't need a pipeline reload
+
         to_exclude = {item.path_index for item in self._items if item.selected}
         if to_exclude:
             self._excluded |= to_exclude
@@ -458,30 +530,31 @@ class InteractiveCanvas(QGraphicsView):
             item.set_sel(False)
         for bitem in self._bridge_items:
             bitem.set_sel(False)
+        for s in self._staged_items:
+            s.set_sel(False)
 
-    def confirm_pending_bridge(self) -> None:
-        """Finalise the two-point bridge that is awaiting confirmation."""
-        if self._bridge_pt1 is None or self._bridge_pt2 is None:
+    def confirm_staged_bridges(self) -> None:
+        """Commit all staged bridges as confirmed manual bridges."""
+        if not self._staged_data:
             return
-        pt1, pt2, width_px = self._bridge_pt1, self._bridge_pt2, self._bridge_width_px
-        self._cancel_pending()
-        idx = len(self._manual_bridges)
-        self._manual_bridges.append((pt1, pt2, width_px))
-        item = _ConfirmedBridgeItem(pt1, pt2, idx, width_px)
-        self._scene.addItem(item)
-        self._bridge_items.append(item)
+        for staged_item in self._staged_items:
+            self._scene.removeItem(staged_item)
+        self._staged_items.clear()
+        for pt1, pt2 in self._staged_data:
+            self._manual_bridges.append((pt1, pt2, self._bridge_width_px))
+        self._staged_data.clear()
         self.paths_modified.emit()
-        self.mode_changed.emit("bridge")
+        self._emit_mode_hint()
 
     # ── Event handlers ────────────────────────────────────────────────────
 
     def enterEvent(self, event) -> None:
-        """Grab keyboard focus when mouse enters — Delete key works instantly."""
         self.setFocus()
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:
         self._hide_snap_dot()
+        self._hide_guide_line()
         super().leaveEvent(event)
 
     def mousePressEvent(self, event) -> None:
@@ -502,7 +575,8 @@ class InteractiveCanvas(QGraphicsView):
         if self._mode == Mode.BRIDGE:
             scene_pos = self.mapToScene(event.position().toPoint())
             pt = (float(scene_pos.x()), float(scene_pos.y()))
-            self._bridge_click(pt)
+            shift = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+            self._bridge_click(pt, shift)
             event.accept()
             return
 
@@ -527,14 +601,23 @@ class InteractiveCanvas(QGraphicsView):
         event.accept()
 
     def mouseMoveEvent(self, event) -> None:
-        if self._mode == Mode.BRIDGE and self._bridge_pt2 is None:
-            # Show snap indicator while placing bridge points
+        if self._mode == Mode.BRIDGE:
             scene_pos = self.mapToScene(event.position().toPoint())
             pt = (float(scene_pos.x()), float(scene_pos.y()))
-            snapped = self._snap_to_path(pt)
+            shift = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+
+            if shift and self._bridge_pt1 is not None:
+                constrained = _constrain_to_45(self._bridge_pt1, pt)
+                snapped = self._snap_to_path(constrained)
+                self._show_guide_line(self._bridge_pt1, snapped)
+            else:
+                self._hide_guide_line()
+                snapped = self._snap_to_path(pt)
+
             self._update_snap_dot(snapped)
-        elif self._mode != Mode.BRIDGE:
+        else:
             self._hide_snap_dot()
+            self._hide_guide_line()
 
         if self._rubber_band is not None and self._rubber_origin is not None:
             self._rubber_band.setGeometry(
@@ -553,10 +636,9 @@ class InteractiveCanvas(QGraphicsView):
             self._rubber_origin = None
 
             scene_rect = self.mapToScene(vp_rect).boundingRect()
-            all_items = self._items + self._bridge_items
+            all_items: List[_AnyItem] = self._items + self._bridge_items + self._staged_items
             for item in all_items:
-                item_scene_rect = item.mapToScene(item.boundingRect()).boundingRect()
-                if scene_rect.intersects(item_scene_rect):
+                if scene_rect.intersects(item.mapToScene(item.boundingRect()).boundingRect()):
                     item.set_sel(True)
 
         super().mouseReleaseEvent(event)
@@ -569,16 +651,17 @@ class InteractiveCanvas(QGraphicsView):
         if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
             self.delete_selected()
         elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            if self._mode == Mode.BRIDGE and self._bridge_pt2 is not None:
-                self.confirm_pending_bridge()
+            if self._mode == Mode.BRIDGE and self._staged_data:
+                self.confirm_staged_bridges()
         elif event.key() == Qt.Key.Key_Escape:
             if self._mode == Mode.BRIDGE:
-                if self._bridge_pt1 is not None or self._bridge_pt2 is not None:
-                    # Cancel pending points, stay in bridge mode for next bridge
-                    self._cancel_pending()
-                    self.mode_changed.emit("bridge")
+                if self._bridge_pt1 is not None:
+                    self._cancel_pt1()
+                    self._emit_mode_hint()
+                elif self._staged_data:
+                    self._cancel_staged()
+                    self._emit_mode_hint()
                 else:
-                    # Nothing pending — exit bridge mode
                     self.set_mode(Mode.SELECT)
             else:
                 self.clear_selection()
@@ -593,15 +676,12 @@ class InteractiveCanvas(QGraphicsView):
 
     # ── Bridge drawing ────────────────────────────────────────────────────
 
-    def _bridge_click(self, pt: Tuple[float, float]) -> None:
-        if self._bridge_pt2 is not None:
-            # Already in confirm state — ignore further clicks
-            return
-
-        snapped = self._snap_to_path(pt)
-
+    def _bridge_click(self, pt: Tuple[float, float], shift: bool = False) -> None:
         if self._bridge_pt1 is None:
-            # Place first point
+            # First point — snap and place yellow dot
+            snapped = self._snap_to_path(
+                _constrain_to_45(pt, pt) if False else pt   # no constraint for pt1
+            )
             self._bridge_pt1 = snapped
             r = _MARKER_R
             self._pending_dot = self._scene.addEllipse(
@@ -610,56 +690,53 @@ class InteractiveCanvas(QGraphicsView):
             )
             self.mode_changed.emit("bridge_pt2")
         else:
-            # Place second point — show preview rect, enter confirm state
-            self._bridge_pt2 = snapped
-            self._hide_snap_dot()
-            self._show_bridge_preview(self._bridge_pt1, self._bridge_pt2)
-            self.mode_changed.emit("bridge_confirm")
+            # Second point — snap, apply optional Shift constraint, stage the bridge
+            if shift:
+                constrained = _constrain_to_45(self._bridge_pt1, pt)
+                snapped = self._snap_to_path(constrained)
+            else:
+                snapped = self._snap_to_path(pt)
 
-    def _show_bridge_preview(
-        self,
-        pt1: Tuple[float, float],
-        pt2: Tuple[float, float],
-    ) -> None:
-        """Show a white rectangle preview of what the bridge cut will look like."""
+            pt1 = self._bridge_pt1
+            self._cancel_pt1()
+
+            idx = len(self._staged_data)
+            self._staged_data.append((pt1, snapped))
+            staged_item = _StagedBridgeItem(pt1, snapped, idx, self._bridge_width_px)
+            self._scene.addItem(staged_item)
+            self._staged_items.append(staged_item)
+
+            self._hide_guide_line()
+            self._emit_mode_hint()
+
+    def _cancel_pt1(self) -> None:
+        self._bridge_pt1 = None
         if self._pending_dot is not None:
             self._scene.removeItem(self._pending_dot)
             self._pending_dot = None
-        if self._pending_rect is not None:
-            self._scene.removeItem(self._pending_rect)
-            self._pending_rect = None
 
-        rect_pts = _compute_bridge_rect(pt1, pt2, self._bridge_width_px)
-        if rect_pts is None:
-            return
-
-        qpath = QPainterPath()
-        qpath.moveTo(rect_pts[0][0], rect_pts[0][1])
-        for x, y in rect_pts[1:]:
-            qpath.lineTo(x, y)
-        qpath.closeSubpath()
-
-        self._pending_rect = QGraphicsPathItem(qpath)
-        # Solid white outline + very subtle green fill to distinguish from confirmed paths
-        self._pending_rect.setPen(QPen(_COL_BRIDGE, 2.0))
-        self._pending_rect.setBrush(QBrush(QColor(34, 197, 94, 35)))
-        self._scene.addItem(self._pending_rect)
+    def _cancel_staged(self) -> None:
+        for item in self._staged_items:
+            self._scene.removeItem(item)
+        self._staged_items.clear()
+        self._staged_data.clear()
 
     def _cancel_pending(self) -> None:
-        self._bridge_pt1 = None
-        self._bridge_pt2 = None
-        if self._pending_dot is not None:
-            self._scene.removeItem(self._pending_dot)
-            self._pending_dot = None
-        if self._pending_rect is not None:
-            self._scene.removeItem(self._pending_rect)
-            self._pending_rect = None
+        self._cancel_pt1()
+        self._cancel_staged()
         self._hide_snap_dot()
+        self._hide_guide_line()
 
-    # ── Snapping ──────────────────────────────────────────────────────────
+    def _emit_mode_hint(self) -> None:
+        """Emit the right mode_changed string based on current staging state."""
+        if self._staged_data:
+            self.mode_changed.emit("bridge_confirm")
+        else:
+            self.mode_changed.emit("bridge")
+
+    # ── Snapping & visual aids ────────────────────────────────────────────
 
     def _snap_to_path(self, pt: Tuple[float, float]) -> Tuple[float, float]:
-        """Return the nearest point on any visible path segment to pt."""
         best_dist_sq = float("inf")
         best_pt = pt
         px, py = pt
@@ -694,12 +771,34 @@ class InteractiveCanvas(QGraphicsView):
             self._scene.removeItem(self._snap_dot)
             self._snap_dot = None
 
+    def _show_guide_line(
+        self,
+        pt1: Tuple[float, float],
+        pt2: Tuple[float, float],
+    ) -> None:
+        """Draw a dashed guide line from pt1 to pt2 (Shift-constrain visual)."""
+        qpath = QPainterPath()
+        qpath.moveTo(pt1[0], pt1[1])
+        qpath.lineTo(pt2[0], pt2[1])
+        if self._guide_line is None:
+            self._guide_line = QGraphicsPathItem(qpath)
+            self._guide_line.setPen(
+                QPen(QColor(251, 191, 36, 160), 1.0, Qt.PenStyle.DashLine)
+            )
+            self._scene.addItem(self._guide_line)
+        else:
+            self._guide_line.setPath(qpath)
+
+    def _hide_guide_line(self) -> None:
+        if self._guide_line is not None:
+            self._scene.removeItem(self._guide_line)
+            self._guide_line = None
+
     # ── Hit detection ─────────────────────────────────────────────────────
 
-    def _hit_any(
-        self, scene_pos: QPointF
-    ) -> Optional[Union[_PathItem, _BridgeMarkerItem, _ConfirmedBridgeItem]]:
+    def _hit_any(self, scene_pos: QPointF) -> Optional[_AnyItem]:
         for item in self._scene.items(scene_pos):
-            if isinstance(item, (_PathItem, _BridgeMarkerItem, _ConfirmedBridgeItem)):
+            if isinstance(item, (_PathItem, _BridgeMarkerItem,
+                                  _ConfirmedBridgeItem, _StagedBridgeItem)):
                 return item
         return None
