@@ -156,15 +156,18 @@ class ImagePreview(QLabel):
 
 
 class SvgPreview(QWidget):
-    """SVG preview using QSvgWidget inside a scrollable container."""
+    """SVG preview — white background so black cut lines are visible."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        # White background simulates paper / laser bed view
+        self.setStyleSheet("background: white;")
         self._svg_widget = QSvgWidget(self)
+        self._svg_widget.setStyleSheet("background: white;")
         self._svg_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(24, 24, 24, 24)
         layout.addWidget(self._svg_widget)
 
     def load_svg_string(self, svg: str) -> None:

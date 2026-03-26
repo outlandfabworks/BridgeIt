@@ -283,6 +283,14 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(str)
     def _on_file_opened(self, path: str) -> None:
+        # Show original image immediately while pipeline runs in background
+        try:
+            from PIL import Image as _Image
+            orig = _Image.open(path)
+            self._preview.show_image_from_pil(orig)
+            self._btn_view_image.setEnabled(True)
+        except Exception:
+            pass
         self._run_pipeline(source=path, preview_only=False)
 
     @pyqtSlot(object)

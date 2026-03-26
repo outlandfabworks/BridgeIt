@@ -62,9 +62,14 @@ def _extract_alpha(img: Image.Image) -> np.ndarray:
 
 
 def _find_contours(binary: np.ndarray, min_area: float) -> List[np.ndarray]:
-    """Find significant external contours in the binary mask."""
+    """Find ALL contours — outer shapes AND inner holes (letter counters etc).
+
+    Uses RETR_TREE so that holes inside letters (O, D, P, etc.) and logo
+    interior cutouts are included as separate cut paths, which is correct
+    for laser cutting.
+    """
     contours, _ = cv2.findContours(
-        binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_L1
+        binary, cv2.RETR_TREE, cv2.CHAIN_APPROX_TC89_L1
     )
     filtered = [c for c in contours if cv2.contourArea(c) >= min_area]
     # Sort largest → smallest so primary shape comes first
