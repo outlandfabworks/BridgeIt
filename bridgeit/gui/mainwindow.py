@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
     QHBoxLayout,
+    QVBoxLayout,
     QLabel,
     QMainWindow,
     QProgressBar,
