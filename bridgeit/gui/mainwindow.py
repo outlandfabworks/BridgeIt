@@ -132,6 +132,7 @@ class MainWindow(QMainWindow):
         self._excluded_paths: set = set()
         self._manual_bridges: list = []
         self._deleted_auto_bridges: set = set()
+        self._bridge_confirming: bool = False
 
         self._build_ui()
         self._apply_theme()
@@ -378,8 +379,11 @@ class MainWindow(QMainWindow):
 
             # Filter excluded paths and append manual bridge rectangles
             active_paths = [p for i, p in enumerate(br.paths) if i not in self._excluded_paths]
-            for pt1, pt2 in self._manual_bridges:
-                rect = _bridge_rect(pt1, pt2, bridge_px)
+            for bridge_data in self._manual_bridges:
+                pt1, pt2 = bridge_data[0], bridge_data[1]
+                # Use stored width if available, otherwise fall back to current settings
+                w_px = bridge_data[2] if len(bridge_data) > 2 else bridge_px
+                rect = _bridge_rect(pt1, pt2, w_px)
                 if rect:
                     active_paths.append(rect)
 
@@ -411,10 +415,17 @@ class MainWindow(QMainWindow):
     @pyqtSlot()
     def _on_toggle_bridge_mode(self) -> None:
         canvas = self._preview.canvas
+        if self._bridge_confirming:
+            # Button now acts as "Confirm Bridge"
+            canvas.confirm_pending_bridge()
+            self._bridge_confirming = False
+            return
         if canvas.mode == CanvasMode.BRIDGE:
             canvas.set_mode(CanvasMode.SELECT)
             self._btn_add_bridge.setChecked(False)
         else:
+            from bridgeit.pipeline.bridge import mm_to_px
+            canvas.bridge_width_px = mm_to_px(self._controls.get_settings().bridge_width_mm)
             canvas.set_mode(CanvasMode.BRIDGE)
             self._btn_add_bridge.setChecked(True)
         self._preview.show_canvas()
@@ -442,14 +453,25 @@ class MainWindow(QMainWindow):
     @pyqtSlot(str)
     def _on_canvas_mode_changed(self, mode_str: str) -> None:
         hints = {
-            "select":     "Select mode — click paths to select, Delete to remove",
-            "bridge":     "Bridge mode — click first point on the canvas",
-            "bridge_pt2": "Bridge mode — click second point to complete bridge",
+            "select":         "Select mode — click paths to select, Delete to remove",
+            "bridge":         "Bridge mode — click a point on a path to start a bridge",
+            "bridge_pt2":     "Bridge mode — click second point on a path to complete",
+            "bridge_confirm": "Bridge ready — click Confirm Bridge (or Enter) to apply, Escape to cancel",
         }
         self._set_status(hints.get(mode_str, ""))
-        in_bridge = mode_str in ("bridge", "bridge_pt2")
-        self._btn_add_bridge.setChecked(in_bridge)
-        self._btn_add_bridge.setText("Cancel Bridge" if in_bridge else "Add Bridge")
+
+        if mode_str == "bridge_confirm":
+            self._bridge_confirming = True
+            self._btn_add_bridge.setChecked(True)
+            self._btn_add_bridge.setText("Confirm Bridge")
+        elif mode_str in ("bridge", "bridge_pt2"):
+            self._bridge_confirming = False
+            self._btn_add_bridge.setChecked(True)
+            self._btn_add_bridge.setText("Cancel Bridge")
+        else:  # select
+            self._bridge_confirming = False
+            self._btn_add_bridge.setChecked(False)
+            self._btn_add_bridge.setText("Add Bridge")
 
     # ------------------------------------------------------------------
     # Pipeline execution
