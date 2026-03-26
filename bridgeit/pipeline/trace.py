@@ -51,10 +51,19 @@ def trace_contours(
 
 
 def _extract_alpha(img: Image.Image) -> np.ndarray:
-    """Return a binary mask from the alpha channel."""
+    """Return a binary mask from the alpha channel.
+
+    Applies a Gaussian blur before re-thresholding so that the pixel-grid
+    staircase on diagonal edges is smoothed out, producing cleaner contours.
+    """
     alpha = np.array(img.split()[3])          # 0-255
     _, binary = cv2.threshold(alpha, 10, 255, cv2.THRESH_BINARY)
-    # Slight morphological cleanup to remove single-pixel speckles
+
+    # Blur then re-threshold: rounds jagged pixel boundaries into smooth edges
+    blurred = cv2.GaussianBlur(binary, (7, 7), 2.0)
+    _, binary = cv2.threshold(blurred, 127, 255, cv2.THRESH_BINARY)
+
+    # Morphological cleanup to remove single-pixel speckles
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=2)
     binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
@@ -86,7 +95,9 @@ def _contours_to_paths(contours: List[np.ndarray], smoothing: float) -> List[Pat
 
         if smoothing > 0:
             peri = cv2.arcLength(contour, closed=True)
-            epsilon = smoothing * peri / len(contour)
+            # Use a small fixed fraction of perimeter to avoid
+            # over-simplification on dense contours (text, curves)
+            epsilon = max(1.0, smoothing * peri * 0.001)
             contour = cv2.approxPolyDP(contour, epsilon, closed=True)
 
         if len(contour) < 3:

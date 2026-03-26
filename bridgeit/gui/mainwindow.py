@@ -104,6 +104,7 @@ class MainWindow(QMainWindow):
         self._worker_thread: Optional[QThread] = None
         self._worker: Optional[_PipelineWorker] = None
         self._pending_settings: Optional[PipelineSettings] = None
+        self._preview_svg: Optional[str] = None
 
         self._build_ui()
         self._apply_theme()
@@ -335,8 +336,8 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot()
     def _show_svg(self) -> None:
-        if self._last_result and self._last_result.svg_string:
-            self._preview.show_svg(self._last_result.svg_string)
+        if self._preview_svg:
+            self._preview.show_svg(self._preview_svg)
 
     # ------------------------------------------------------------------
     # Pipeline execution
@@ -390,11 +391,15 @@ class MainWindow(QMainWindow):
         if result.nobg_image is not None:
             self._nobg_image = result.nobg_image
 
-        # Update preview
-        if result.svg_string:
-            self._preview.show_svg(result.svg_string)
+        # Build preview SVG with white strokes + bridge markers
+        if result.bridge_result:
+            from bridgeit.pipeline.export import make_preview_svg
+            self._preview_svg = make_preview_svg(result.bridge_result)
             self._btn_view_svg.setEnabled(True)
+
+        # Stay on original image view — user switches to SVG manually
         if self._nobg_image:
+            self._preview.show_image_from_pil(self._nobg_image)
             self._btn_view_image.setEnabled(True)
 
         # Update info panel

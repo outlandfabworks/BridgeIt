@@ -18,9 +18,14 @@ def _run_gui() -> None:
     from bridgeit.gui.mainwindow import MainWindow
     from bridgeit.config import PREVIEW_BG_COLOR, TEXT_COLOR
 
+    # Must be set BEFORE QApplication is fully constructed so the
+    # WM_CLASS hint on X11/Wayland reads "BridgeIt" not "python3"
+    QApplication.setApplicationName("BridgeIt")
+    QApplication.setApplicationDisplayName("BridgeIt")
+    QApplication.setOrganizationName("BridgeIt")
+
     app = QApplication(sys.argv)
-    app.setApplicationName("BridgeIt")
-    app.setOrganizationName("BridgeIt")
+    app.setDesktopFileName("BridgeIt")   # links to BridgeIt.desktop on Linux
 
     # Dark palette as a base (stylesheet overrides most, but this helps
     # Qt-drawn elements like scroll bars)
