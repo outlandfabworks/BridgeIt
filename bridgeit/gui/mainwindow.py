@@ -391,7 +391,7 @@ class MainWindow(QMainWindow):
 
         # Update info panel
         islands = len(result.analysis.islands) if result.analysis else 0
-        bridges = len(result.bridges) if result.bridge_result else 0
+        bridges = len(result.bridge_result.bridges) if result.bridge_result else 0
         paths = len(result.bridge_result.paths) if result.bridge_result else 0
         self._controls.update_info(islands, bridges, paths, result.elapsed_seconds)
 
