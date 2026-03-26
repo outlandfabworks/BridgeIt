@@ -447,7 +447,9 @@ class MainWindow(QMainWindow):
             "bridge_pt2": "Bridge mode — click second point to complete bridge",
         }
         self._set_status(hints.get(mode_str, ""))
-        self._btn_add_bridge.setChecked(mode_str in ("bridge", "bridge_pt2"))
+        in_bridge = mode_str in ("bridge", "bridge_pt2")
+        self._btn_add_bridge.setChecked(in_bridge)
+        self._btn_add_bridge.setText("Cancel Bridge" if in_bridge else "Add Bridge")
 
     # ------------------------------------------------------------------
     # Pipeline execution

@@ -433,10 +433,8 @@ class InteractiveCanvas(QGraphicsView):
         if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
             self.delete_selected()
         elif event.key() == Qt.Key.Key_Escape:
-            if self._mode == Mode.BRIDGE and self._bridge_pt1 is not None:
-                self._cancel_pending()
-                self.mode_changed.emit("bridge")
-            elif self._mode == Mode.BRIDGE:
+            if self._mode == Mode.BRIDGE:
+                # One Escape always fully exits bridge mode
                 self.set_mode(Mode.SELECT)
             else:
                 self.clear_selection()
