@@ -53,6 +53,30 @@ from bridgeit.config import (
 from bridgeit.gui.controls import ControlsPanel
 from bridgeit.gui.preview import PreviewPanel
 from bridgeit.pipeline.pipeline import PipelineResult, PipelineRunner, PipelineSettings, Stage
+from bridgeit.gui.canvas import InteractiveCanvas, Mode as CanvasMode
+from bridgeit.pipeline.export import make_preview_svg
+
+
+def _bridge_rect(
+    pt1: tuple,
+    pt2: tuple,
+    width_px: float,
+):
+    """Return a closed rectangle path representing a manual bridge."""
+    import math
+    dx = pt2[0] - pt1[0]
+    dy = pt2[1] - pt1[1]
+    length = math.hypot(dx, dy)
+    if length < 1e-6:
+        return None
+    ux, uy = dx / length, dy / length
+    px, py = -uy, ux
+    half = width_px / 2
+    a = (pt1[0] + px*half, pt1[1] + py*half)
+    b = (pt1[0] - px*half, pt1[1] - py*half)
+    c = (pt2[0] - px*half, pt2[1] - py*half)
+    d = (pt2[0] + px*half, pt2[1] + py*half)
+    return [a, b, c, d, a]
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +129,8 @@ class MainWindow(QMainWindow):
         self._worker: Optional[_PipelineWorker] = None
         self._pending_settings: Optional[PipelineSettings] = None
         self._preview_svg: Optional[str] = None
+        self._excluded_paths: set = set()
+        self._manual_bridges: list = []
 
         self._build_ui()
         self._apply_theme()
@@ -139,6 +165,8 @@ class MainWindow(QMainWindow):
 
         self._preview = PreviewPanel()
         self._preview.file_dropped.connect(self._on_file_opened)
+        self._preview.canvas.paths_modified.connect(self._on_canvas_modified)
+        self._preview.canvas.mode_changed.connect(self._on_canvas_mode_changed)
 
         splitter.addWidget(self._controls)
         splitter.addWidget(self._preview)
@@ -219,6 +247,24 @@ class MainWindow(QMainWindow):
         self._btn_view_svg.setEnabled(False)
         self._btn_view_svg.clicked.connect(self._show_svg)
         toolbar.addWidget(self._btn_view_svg)
+
+        # Edit tools (enabled after pipeline runs)
+        sep2 = QWidget()
+        sep2.setFixedWidth(8)
+        toolbar.addWidget(sep2)
+
+        self._btn_delete = self._toolbar_button("Delete Selected", primary=False)
+        self._btn_delete.setEnabled(False)
+        self._btn_delete.setToolTip("Select paths in the canvas then click to remove them (or press Delete)")
+        self._btn_delete.clicked.connect(self._on_delete_selected)
+        toolbar.addWidget(self._btn_delete)
+
+        self._btn_add_bridge = self._toolbar_button("Add Bridge", primary=False)
+        self._btn_add_bridge.setEnabled(False)
+        self._btn_add_bridge.setCheckable(True)
+        self._btn_add_bridge.setToolTip("Click two points in the canvas to manually draw a bridge")
+        self._btn_add_bridge.clicked.connect(self._on_toggle_bridge_mode)
+        toolbar.addWidget(self._btn_add_bridge)
 
         return toolbar
 
@@ -336,8 +382,9 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot()
     def _show_svg(self) -> None:
-        if self._preview_svg:
-            self._preview.show_svg(self._preview_svg)
+        if self._last_result and self._last_result.bridge_result:
+            self._preview.show_canvas()
+            self._preview.canvas.setFocus()
 
     # ------------------------------------------------------------------
     # Pipeline execution
@@ -391,13 +438,21 @@ class MainWindow(QMainWindow):
         if result.nobg_image is not None:
             self._nobg_image = result.nobg_image
 
-        # Build preview SVG with white strokes + bridge markers
+        # Load canvas with all paths + auto bridges
         if result.bridge_result:
-            from bridgeit.pipeline.export import make_preview_svg
-            self._preview_svg = make_preview_svg(result.bridge_result)
+            self._excluded_paths = set()
+            self._manual_bridges = []
+            self._preview.canvas.load(
+                result.bridge_result.paths,
+                result.bridge_result.bridges,
+                excluded=self._excluded_paths,
+                manual_bridges=self._manual_bridges,
+            )
             self._btn_view_svg.setEnabled(True)
+            self._btn_delete.setEnabled(True)
+            self._btn_add_bridge.setEnabled(True)
 
-        # Stay on original image view — user switches to SVG manually
+        # Stay on original image view — user switches to canvas manually
         if self._nobg_image:
             self._preview.show_image_from_pil(self._nobg_image)
             self._btn_view_image.setEnabled(True)

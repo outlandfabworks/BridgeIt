@@ -25,7 +25,6 @@ from PyQt6.QtGui import (
     QPixmap,
     QWheelEvent,
 )
-from PyQt6.QtSvgWidgets import QSvgWidget
 from PyQt6.QtWidgets import (
     QFrame,
     QLabel,
@@ -36,6 +35,7 @@ from PyQt6.QtWidgets import (
 )
 
 from bridgeit.config import MUTED_COLOR, PREVIEW_BG_COLOR, TEXT_COLOR
+from bridgeit.gui.canvas import InteractiveCanvas
 
 
 class DropZone(QWidget):
@@ -155,73 +155,56 @@ class ImagePreview(QLabel):
             self._drag_start = None
 
 
-class SvgPreview(QWidget):
-    """SVG preview — dark background; strokes are white in the SVG itself."""
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._svg_widget = QSvgWidget(self)
-        self._svg_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self._svg_widget)
-
-    def load_svg_string(self, svg: str) -> None:
-        self._svg_widget.load(svg.encode("utf-8"))
-        self.update()
-
-
 class PreviewPanel(QStackedWidget):
-    """Main preview panel — manages drop zone, image preview, and SVG preview."""
+    """Main preview panel — manages drop zone, image preview, and interactive canvas."""
 
     file_dropped = pyqtSignal(str)
 
     # Page indices
-    PAGE_DROP = 0
-    PAGE_IMAGE = 1
-    PAGE_SVG = 2
+    PAGE_DROP   = 0
+    PAGE_IMAGE  = 1
+    PAGE_CANVAS = 2
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setAcceptDrops(True)
 
-        self._drop_zone = DropZone()
-        self._image_preview = ImagePreview()
-        self._svg_preview = SvgPreview()
+        self._drop_zone   = DropZone()
+        self._img_preview = ImagePreview()
+        self._canvas      = InteractiveCanvas()
 
         self.addWidget(self._drop_zone)
-        self.addWidget(self._image_preview)
-        self.addWidget(self._svg_preview)
+        self.addWidget(self._img_preview)
+        self.addWidget(self._canvas)
 
         self._drop_zone.file_dropped.connect(self.file_dropped)
         self.setCurrentIndex(self.PAGE_DROP)
-
         self.setStyleSheet(f"background: {PREVIEW_BG_COLOR};")
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
+    @property
+    def canvas(self) -> InteractiveCanvas:
+        return self._canvas
+
     def show_drop_zone(self) -> None:
         self.setCurrentIndex(self.PAGE_DROP)
 
     def show_image(self, pixmap: QPixmap) -> None:
-        self._image_preview.set_pixmap(pixmap)
+        self._img_preview.set_pixmap(pixmap)
         self.setCurrentIndex(self.PAGE_IMAGE)
 
-    def show_svg(self, svg_string: str) -> None:
-        self._svg_preview.load_svg_string(svg_string)
-        self.setCurrentIndex(self.PAGE_SVG)
+    def show_canvas(self) -> None:
+        self.setCurrentIndex(self.PAGE_CANVAS)
 
     def show_image_from_pil(self, pil_image) -> None:
         """Convert a PIL Image to QPixmap and display it."""
         from PyQt6.QtGui import QImage
-
         if pil_image.mode != "RGBA":
             pil_image = pil_image.convert("RGBA")
         w, h = pil_image.size
-        # Use raw bytes so Qt owns the data independently (avoids double-free)
         data = bytes(pil_image.tobytes("raw", "RGBA"))
         qt_image = QImage(data, w, h, w * 4, QImage.Format.Format_RGBA8888).copy()
         pixmap = QPixmap.fromImage(qt_image)
