@@ -370,7 +370,24 @@ class MainWindow(QMainWindow):
 
         try:
             from bridgeit.pipeline.export import export_svg
-            written = export_svg(self._last_result.bridge_result, path)
+            from bridgeit.pipeline.bridge import BridgeResult, mm_to_px
+
+            br = self._last_result.bridge_result
+            bridge_px = mm_to_px(self._controls.get_settings().bridge_width_mm)
+
+            # Filter excluded paths and append manual bridge rectangles
+            active_paths = [p for i, p in enumerate(br.paths) if i not in self._excluded_paths]
+            for pt1, pt2 in self._manual_bridges:
+                rect = _bridge_rect(pt1, pt2, bridge_px)
+                if rect:
+                    active_paths.append(rect)
+
+            modified_br = BridgeResult(
+                paths=active_paths,
+                bridges=br.bridges,
+                image_size=br.image_size,
+            )
+            written = export_svg(modified_br, path)
             self._set_status(f"Exported: {written}", success=True)
         except Exception as exc:
             self._set_status(f"Export failed: {exc}", error=True)
@@ -385,6 +402,47 @@ class MainWindow(QMainWindow):
         if self._last_result and self._last_result.bridge_result:
             self._preview.show_canvas()
             self._preview.canvas.setFocus()
+
+    @pyqtSlot()
+    def _on_delete_selected(self) -> None:
+        self._preview.canvas.delete_selected()
+
+    @pyqtSlot()
+    def _on_toggle_bridge_mode(self) -> None:
+        canvas = self._preview.canvas
+        if canvas.mode == CanvasMode.BRIDGE:
+            canvas.set_mode(CanvasMode.SELECT)
+            self._btn_add_bridge.setChecked(False)
+        else:
+            canvas.set_mode(CanvasMode.BRIDGE)
+            self._btn_add_bridge.setChecked(True)
+        self._preview.show_canvas()
+        canvas.setFocus()
+
+    @pyqtSlot()
+    def _on_canvas_modified(self) -> None:
+        """User deleted paths or added a manual bridge — reload canvas."""
+        if not self._last_result or not self._last_result.bridge_result:
+            return
+        self._excluded_paths = self._preview.canvas.get_excluded()
+        self._manual_bridges = self._preview.canvas.get_manual_bridges()
+        br = self._last_result.bridge_result
+        self._preview.canvas.load(
+            br.paths,
+            br.bridges,
+            excluded=self._excluded_paths,
+            manual_bridges=self._manual_bridges,
+        )
+
+    @pyqtSlot(str)
+    def _on_canvas_mode_changed(self, mode_str: str) -> None:
+        hints = {
+            "select":     "Select mode — click paths to select, Delete to remove",
+            "bridge":     "Bridge mode — click first point on the canvas",
+            "bridge_pt2": "Bridge mode — click second point to complete bridge",
+        }
+        self._set_status(hints.get(mode_str, ""))
+        self._btn_add_bridge.setChecked(mode_str in ("bridge", "bridge_pt2"))
 
     # ------------------------------------------------------------------
     # Pipeline execution
