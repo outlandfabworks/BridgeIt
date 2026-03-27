@@ -24,6 +24,7 @@ from PyQt6.QtGui import QAction, QColor, QFont, QPalette
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QVBoxLayout,
     QLabel,
@@ -274,6 +275,17 @@ class MainWindow(QMainWindow):
         self._btn_add_bridge.clicked.connect(self._on_toggle_bridge_mode)
         toolbar.addWidget(self._btn_add_bridge)
 
+        # Help / shortcuts
+        sep3 = QWidget()
+        sep3.setFixedWidth(8)
+        toolbar.addWidget(sep3)
+
+        btn_help = self._toolbar_button("?", primary=False)
+        btn_help.setFixedWidth(32)
+        btn_help.setToolTip("Keyboard shortcuts")
+        btn_help.clicked.connect(self._show_shortcuts)
+        toolbar.addWidget(btn_help)
+
         return toolbar
 
     @staticmethod
@@ -426,6 +438,87 @@ class MainWindow(QMainWindow):
     @pyqtSlot()
     def _on_delete_selected(self) -> None:
         self._preview.canvas.delete_selected()
+
+    @pyqtSlot()
+    def _show_shortcuts(self) -> None:
+        from PyQt6.QtWidgets import QDialog, QDialogButtonBox
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Keyboard Shortcuts")
+        dlg.setMinimumWidth(420)
+        dlg.setStyleSheet(
+            f"background: #16162a; color: {TEXT_COLOR};"
+            f"font-size: 12px;"
+        )
+
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(24, 20, 24, 16)
+        layout.setSpacing(0)
+
+        sections = [
+            ("NAVIGATION", [
+                ("Scroll wheel",          "Zoom in / out"),
+                ("Middle-click drag",     "Pan canvas"),
+            ]),
+            ("SELECT MODE", [
+                ("Click",                 "Select a path or bridge"),
+                ("Ctrl+click / Shift+click", "Add to selection"),
+                ("Click+drag",            "Rubber-band select region"),
+                ("Delete / Backspace",    "Remove selected items"),
+                ("Escape",                "Deselect all"),
+            ]),
+            ("BRIDGE MODE", [
+                ("Click (pt 1)",          "Place first endpoint (snaps to path)"),
+                ("Click (pt 2)",          "Place second endpoint & stage bridge"),
+                ("Shift+click (pt 2)",    "Straight bridge (0°/45°/90°/135°)"),
+                ("Click staged bridge",   "Select staged bridge"),
+                ("Delete",                "Remove selected staged bridge"),
+                ("Enter",                 "Confirm all staged bridges"),
+                ("Escape",                "Cancel pending point → clear staged → exit"),
+            ]),
+        ]
+
+        for section_title, rows in sections:
+            # Section header
+            hdr = QLabel(section_title)
+            hdr.setStyleSheet(
+                f"color: {MUTED_COLOR}; font-size: 10px; font-weight: 600;"
+                f"letter-spacing: 1px; padding-top: 16px; padding-bottom: 4px;"
+            )
+            layout.addWidget(hdr)
+
+            # Divider
+            div = QFrame()
+            div.setFrameShape(QFrame.Shape.HLine)
+            div.setStyleSheet(f"color: #2a2a3e;")
+            layout.addWidget(div)
+
+            for key, desc in rows:
+                row = QHBoxLayout()
+                row.setContentsMargins(0, 5, 0, 0)
+                key_lbl = QLabel(key)
+                key_lbl.setStyleSheet(
+                    f"color: {TEXT_COLOR}; font-family: monospace; font-size: 11px;"
+                    f"background: #2a2a3e; border-radius: 3px; padding: 1px 6px;"
+                )
+                key_lbl.setFixedWidth(190)
+                desc_lbl = QLabel(desc)
+                desc_lbl.setStyleSheet(f"color: {MUTED_COLOR}; font-size: 11px;")
+                row.addWidget(key_lbl)
+                row.addWidget(desc_lbl)
+                row.addStretch()
+                layout.addLayout(row)
+
+        layout.addSpacing(16)
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        btns.setStyleSheet(
+            f"QPushButton {{ background: {SURFACE_COLOR}; color: {TEXT_COLOR};"
+            f"border: 1px solid #3a3a54; border-radius: 6px; padding: 5px 16px; }}"
+            f"QPushButton:hover {{ background: #34344e; }}"
+        )
+        btns.rejected.connect(dlg.accept)
+        layout.addWidget(btns)
+
+        dlg.exec()
 
     @pyqtSlot()
     def _on_toggle_bridge_mode(self) -> None:
