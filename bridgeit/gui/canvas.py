@@ -351,8 +351,9 @@ _AnyItem = Union[_PathItem, _AnyBridgeItem]
 class InteractiveCanvas(QGraphicsView):
     """Zoomable, pannable canvas for selecting and editing cut paths."""
 
-    paths_modified = pyqtSignal()    # paths deleted, bridge added/deleted
-    mode_changed   = pyqtSignal(str) # "select"|"bridge"|"bridge_pt2"|"bridge_confirm"
+    paths_modified   = pyqtSignal()    # paths deleted, bridge added/deleted
+    mode_changed     = pyqtSignal(str) # "select"|"bridge"|"bridge_pt2"|"bridge_confirm"
+    selection_changed = pyqtSignal()   # any click that may have changed selection
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -592,11 +593,13 @@ class InteractiveCanvas(QGraphicsView):
                 if not hit.selected:
                     self.clear_selection()
             hit.toggle()
+            self.selection_changed.emit()
         else:
             if not (event.modifiers() & (
                 Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier
             )):
                 self.clear_selection()
+                self.selection_changed.emit()
             origin = event.position().toPoint()
             self._rubber_origin = origin
             self._rubber_band = QRubberBand(QRubberBand.Shape.Rectangle, self.viewport())
@@ -645,6 +648,7 @@ class InteractiveCanvas(QGraphicsView):
             for item in all_items:
                 if scene_rect.intersects(item.mapToScene(item.boundingRect()).boundingRect()):
                     item.set_sel(True)
+            self.selection_changed.emit()
 
         super().mouseReleaseEvent(event)
 
@@ -798,6 +802,35 @@ class InteractiveCanvas(QGraphicsView):
         if self._guide_line is not None:
             self._scene.removeItem(self._guide_line)
             self._guide_line = None
+
+    def get_selected_confirmed_bridge(self) -> Optional[Tuple[int, float]]:
+        """Return (bridge_index, width_px) if exactly one confirmed bridge is selected."""
+        selected = [b for b in self._bridge_items
+                    if isinstance(b, _ConfirmedBridgeItem) and b.selected]
+        if len(selected) == 1:
+            idx = selected[0].bridge_index
+            if 0 <= idx < len(self._manual_bridges):
+                entry = self._manual_bridges[idx]
+                width_px = entry[2] if len(entry) > 2 else self._bridge_width_px
+                return (idx, width_px)
+        return None
+
+    def update_bridge_width(self, bridge_index: int, width_px: float) -> None:
+        """Resize a confirmed bridge in-place without a full canvas reload."""
+        if not (0 <= bridge_index < len(self._manual_bridges)):
+            return
+        entry = self._manual_bridges[bridge_index]
+        pt1, pt2 = entry[0], entry[1]
+        self._manual_bridges[bridge_index] = (pt1, pt2, width_px)
+        for i, item in enumerate(self._bridge_items):
+            if isinstance(item, _ConfirmedBridgeItem) and item.bridge_index == bridge_index:
+                was_sel = item.selected
+                self._scene.removeItem(item)
+                new_item = _ConfirmedBridgeItem(pt1, pt2, bridge_index, width_px)
+                new_item.set_sel(was_sel)
+                self._scene.addItem(new_item)
+                self._bridge_items[i] = new_item
+                break
 
     # ── Hit detection ─────────────────────────────────────────────────────
 

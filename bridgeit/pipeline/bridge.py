@@ -65,6 +65,10 @@ def mm_to_px(mm: float, dpi: float = DEFAULT_DPI) -> float:
     return mm * dpi / 25.4
 
 
+def px_to_mm(px: float, dpi: float = DEFAULT_DPI) -> float:
+    return px * 25.4 / dpi
+
+
 def add_bridges(
     analysis: AnalysisResult,
     bridge_width_mm: float = DEFAULT_BRIDGE_WIDTH_MM,

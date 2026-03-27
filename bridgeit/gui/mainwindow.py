@@ -134,6 +134,7 @@ class MainWindow(QMainWindow):
         self._manual_bridges: list = []
         self._deleted_auto_bridges: set = set()
         self._bridge_confirming: bool = False
+        self._editing_bridge_idx: int = -1   # index of selected bridge being resized
 
         # Debounce timer for live settings updates
         self._settings_timer = QTimer()
@@ -176,6 +177,7 @@ class MainWindow(QMainWindow):
         self._preview.file_dropped.connect(self._on_file_opened)
         self._preview.canvas.paths_modified.connect(self._on_canvas_modified)
         self._preview.canvas.mode_changed.connect(self._on_canvas_mode_changed)
+        self._preview.canvas.selection_changed.connect(self._on_selection_changed)
 
         splitter.addWidget(self._controls)
         splitter.addWidget(self._preview)
@@ -432,8 +434,17 @@ class MainWindow(QMainWindow):
             return
         settings = self._pending_settings
         self._pending_settings = None
+
+        if self._editing_bridge_idx >= 0:
+            # Only update the selected bridge's width — no pipeline re-run needed
+            from bridgeit.pipeline.bridge import mm_to_px
+            width_px = mm_to_px(settings.bridge_width_mm)
+            self._preview.canvas.update_bridge_width(self._editing_bridge_idx, width_px)
+            # Keep _manual_bridges in sync so export is correct
+            self._manual_bridges = self._preview.canvas.get_manual_bridges()
+            return
+
         if self._worker_thread and self._worker_thread.isRunning():
-            # Still busy — leave _pending_settings so it re-queues after current run
             self._pending_settings = settings
             return
         self._run_pipeline(source=None, preview_only=True, settings=settings)
@@ -493,6 +504,20 @@ class MainWindow(QMainWindow):
         if self._last_result and self._last_result.bridge_result:
             self._preview.show_canvas()
             self._preview.canvas.setFocus()
+
+    @pyqtSlot()
+    def _on_selection_changed(self) -> None:
+        canvas = self._preview.canvas
+        bridge_info = canvas.get_selected_confirmed_bridge()
+        if bridge_info is not None:
+            from bridgeit.pipeline.bridge import px_to_mm
+            idx, width_px = bridge_info
+            self._editing_bridge_idx = idx
+            self._controls.set_bridge_width_mm(round(px_to_mm(width_px), 2))
+            self._controls.set_bridge_editing_mode(True)
+        else:
+            self._editing_bridge_idx = -1
+            self._controls.set_bridge_editing_mode(False)
 
     @pyqtSlot()
     def _on_delete_selected(self) -> None:
@@ -602,6 +627,8 @@ class MainWindow(QMainWindow):
         """User deleted paths/bridges or added a manual bridge — reload canvas."""
         if not self._last_result or not self._last_result.bridge_result:
             return
+        self._editing_bridge_idx = -1
+        self._controls.set_bridge_editing_mode(False)
         canvas = self._preview.canvas
         self._excluded_paths = canvas.get_excluded()
         self._manual_bridges = canvas.get_manual_bridges()

@@ -86,7 +86,7 @@ class ControlsPanel(QWidget):
         inner.addSpacing(8)
 
         # Bridge width
-        self._bridge_spin, bridge_row = self._labeled_double_spin(
+        self._bridge_spin, bridge_row, self._bridge_lbl = self._labeled_double_spin(
             label="Bridge Width",
             unit="mm",
             value=DEFAULT_BRIDGE_WIDTH_MM,
@@ -102,7 +102,7 @@ class ControlsPanel(QWidget):
         inner.addSpacing(14)
 
         # Contour smoothing
-        self._smooth_spin, smooth_row = self._labeled_double_spin(
+        self._smooth_spin, smooth_row, _ = self._labeled_double_spin(
             label="Contour Smoothing",
             unit="",
             value=DEFAULT_CONTOUR_SMOOTHING,
@@ -184,6 +184,24 @@ class ControlsPanel(QWidget):
         self._info_bridges[1].setText(str(bridges))
         self._info_paths[1].setText(str(paths))
         self._info_time[1].setText(f"{elapsed:.2f}s")
+
+    def set_bridge_width_mm(self, value: float) -> None:
+        """Update the bridge width spinbox silently (no settings_changed emission)."""
+        for w in (self._bridge_spin, self._bridge_slider):
+            w.blockSignals(True)
+        self._bridge_spin.setValue(value)
+        self._bridge_slider.setValue(int(value * 10))
+        for w in (self._bridge_spin, self._bridge_slider):
+            w.blockSignals(False)
+
+    def set_bridge_editing_mode(self, editing: bool) -> None:
+        """Highlight the Bridge Width label when editing a selected bridge."""
+        if editing:
+            self._bridge_lbl.setText("Selected Bridge")
+            self._bridge_lbl.setStyleSheet(f"color: {ACCENT_COLOR}; font-size: 12px; font-weight: 600;")
+        else:
+            self._bridge_lbl.setText("Bridge Width")
+            self._bridge_lbl.setStyleSheet(f"color: {TEXT_COLOR}; font-size: 12px;")
 
     def reset_info(self) -> None:
         for _, lbl in [self._info_islands, self._info_bridges, self._info_paths, self._info_time]:
@@ -274,7 +292,7 @@ class ControlsPanel(QWidget):
         row.addWidget(spin)
         if unit:
             row.addWidget(unit_lbl)
-        return spin, row
+        return spin, row, lbl
 
     @staticmethod
     def _labeled_int_spin(
