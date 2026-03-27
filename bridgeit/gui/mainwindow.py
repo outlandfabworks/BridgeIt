@@ -187,17 +187,28 @@ class MainWindow(QMainWindow):
 
         # Status bar
         self._status_bar = QStatusBar()
-        self._status_bar.setStyleSheet(f"background: #0f0f1e; color: {MUTED_COLOR}; font-size: 11px;")
+        self._status_bar.setStyleSheet(
+            "QStatusBar {"
+            "  background: #0a0a18;"
+            "  border-top: 1px solid #1e1e30;"
+            f" color: {MUTED_COLOR};"
+            "  font-size: 11px;"
+            "  padding: 2px 8px;"
+            "}"
+        )
         self.setStatusBar(self._status_bar)
 
         self._status_label = QLabel("Ready — open or drop an image to begin")
+        self._status_label.setStyleSheet(f"color: {MUTED_COLOR}; font-size: 11px;")
+
         self._progress_bar = QProgressBar()
-        self._progress_bar.setRange(0, 0)  # indeterminate
-        self._progress_bar.setFixedWidth(120)
+        self._progress_bar.setRange(0, 0)
+        self._progress_bar.setFixedWidth(100)
+        self._progress_bar.setFixedHeight(4)
         self._progress_bar.hide()
         self._progress_bar.setStyleSheet(
-            f"QProgressBar {{ background: #2a2a3e; border-radius: 3px; border: none; }}"
-            f"QProgressBar::chunk {{ background: {ACCENT_COLOR}; border-radius: 3px; }}"
+            "QProgressBar { background: #1e1e30; border-radius: 2px; border: none; }"
+            f"QProgressBar::chunk {{ background: {ACCENT_COLOR}; border-radius: 2px; }}"
         )
 
         self._status_bar.addWidget(self._status_label)
@@ -208,85 +219,99 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         toolbar.setFloatable(False)
         toolbar.setStyleSheet(
-            f"""
-            QToolBar {{
-                background: #0f0f1e;
-                border-bottom: 1px solid #2a2a3e;
-                padding: 4px 12px;
-                spacing: 8px;
-            }}
+            """
+            QToolBar {
+                background: #0a0a18;
+                border-bottom: 1px solid #1e1e30;
+                padding: 5px 16px;
+                spacing: 4px;
+            }
             """
         )
 
-        # App name
-        name_lbl = QLabel(f"  {APP_NAME}")
+        # ── Branding ──────────────────────────────────────────────────────
+        logo = QLabel("◆")
+        logo.setStyleSheet(f"color: {ACCENT_COLOR}; font-size: 13px; padding: 0 3px 0 4px;")
+        toolbar.addWidget(logo)
+
+        name_lbl = QLabel(APP_NAME)
         name_lbl.setStyleSheet(
-            f"color: {TEXT_COLOR}; font-size: 16px; font-weight: 700; letter-spacing: 1px;"
+            f"color: {TEXT_COLOR}; font-size: 14px; font-weight: 700; letter-spacing: 0.5px;"
         )
         toolbar.addWidget(name_lbl)
 
-        # Separator
-        sep = QWidget()
-        sep.setFixedWidth(16)
-        toolbar.addWidget(sep)
+        ver_lbl = QLabel(f"v{APP_VERSION}")
+        ver_lbl.setStyleSheet(f"color: {MUTED_COLOR}; font-size: 10px; padding: 3px 12px 0 5px;")
+        toolbar.addWidget(ver_lbl)
 
-        # Open button
-        self._btn_open = self._toolbar_button("Open Image", primary=False)
+        toolbar.addWidget(self._toolbar_sep())
+
+        # ── File actions ──────────────────────────────────────────────────
+        self._btn_open = self._toolbar_button("Open")
+        self._btn_open.setToolTip("Open an image file")
         self._btn_open.clicked.connect(self._on_open_clicked)
         toolbar.addWidget(self._btn_open)
 
-        # Export button
         self._btn_export = self._toolbar_button("Export SVG", primary=True)
         self._btn_export.setEnabled(False)
+        self._btn_export.setToolTip("Export fabrication-ready SVG")
         self._btn_export.clicked.connect(self._on_export_clicked)
         toolbar.addWidget(self._btn_export)
 
-        # Stretch
+        toolbar.addWidget(self._toolbar_sep())
+
+        # ── View toggles ──────────────────────────────────────────────────
+        self._btn_view_image = self._toolbar_button("Original")
+        self._btn_view_image.setEnabled(False)
+        self._btn_view_image.setToolTip("Show background-removed original")
+        self._btn_view_image.clicked.connect(self._show_original)
+        toolbar.addWidget(self._btn_view_image)
+
+        self._btn_view_svg = self._toolbar_button("Paths")
+        self._btn_view_svg.setEnabled(False)
+        self._btn_view_svg.setToolTip("Show cut paths / interactive canvas")
+        self._btn_view_svg.clicked.connect(self._show_svg)
+        toolbar.addWidget(self._btn_view_svg)
+
+        toolbar.addWidget(self._toolbar_sep())
+
+        # ── Edit tools ────────────────────────────────────────────────────
+        self._btn_delete = self._toolbar_button("Delete ✕")
+        self._btn_delete.setEnabled(False)
+        self._btn_delete.setToolTip("Remove selected paths or bridges  (Delete key)")
+        self._btn_delete.clicked.connect(self._on_delete_selected)
+        toolbar.addWidget(self._btn_delete)
+
+        self._btn_add_bridge = self._toolbar_button("＋ Bridge")
+        self._btn_add_bridge.setEnabled(False)
+        self._btn_add_bridge.setCheckable(True)
+        self._btn_add_bridge.setToolTip("Place manual bridges between paths")
+        self._btn_add_bridge.clicked.connect(self._on_toggle_bridge_mode)
+        toolbar.addWidget(self._btn_add_bridge)
+
+        # ── Spacer + help ─────────────────────────────────────────────────
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(spacer)
 
-        # View toggle
-        self._btn_view_image = self._toolbar_button("Show Original", primary=False)
-        self._btn_view_image.setEnabled(False)
-        self._btn_view_image.clicked.connect(self._show_original)
-        toolbar.addWidget(self._btn_view_image)
-
-        self._btn_view_svg = self._toolbar_button("Show SVG", primary=False)
-        self._btn_view_svg.setEnabled(False)
-        self._btn_view_svg.clicked.connect(self._show_svg)
-        toolbar.addWidget(self._btn_view_svg)
-
-        # Edit tools (enabled after pipeline runs)
-        sep2 = QWidget()
-        sep2.setFixedWidth(8)
-        toolbar.addWidget(sep2)
-
-        self._btn_delete = self._toolbar_button("Delete Selected", primary=False)
-        self._btn_delete.setEnabled(False)
-        self._btn_delete.setToolTip("Select paths in the canvas then click to remove them (or press Delete)")
-        self._btn_delete.clicked.connect(self._on_delete_selected)
-        toolbar.addWidget(self._btn_delete)
-
-        self._btn_add_bridge = self._toolbar_button("Add Bridge", primary=False)
-        self._btn_add_bridge.setEnabled(False)
-        self._btn_add_bridge.setCheckable(True)
-        self._btn_add_bridge.setToolTip("Click two points in the canvas to manually draw a bridge")
-        self._btn_add_bridge.clicked.connect(self._on_toggle_bridge_mode)
-        toolbar.addWidget(self._btn_add_bridge)
-
-        # Help / shortcuts
-        sep3 = QWidget()
-        sep3.setFixedWidth(8)
-        toolbar.addWidget(sep3)
-
-        btn_help = self._toolbar_button("?", primary=False)
+        btn_help = self._toolbar_button("?")
         btn_help.setFixedWidth(32)
-        btn_help.setToolTip("Keyboard shortcuts")
+        btn_help.setToolTip("Keyboard shortcuts  (?)")
         btn_help.clicked.connect(self._show_shortcuts)
         toolbar.addWidget(btn_help)
 
         return toolbar
+
+    @staticmethod
+    def _toolbar_sep() -> QWidget:
+        """Thin vertical divider between toolbar groups."""
+        outer = QWidget()
+        outer.setFixedWidth(17)
+        inner = QWidget(outer)
+        inner.setFixedSize(1, 22)
+        inner.setStyleSheet("background: #252538;")
+        inner.move(8, 5)
+        return outer
 
     @staticmethod
     def _toolbar_button(text: str, primary: bool = False) -> QPushButton:
@@ -294,33 +319,58 @@ class MainWindow(QMainWindow):
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         if primary:
             btn.setStyleSheet(
-                f"""
-                QPushButton {{
-                    background: {ACCENT_COLOR};
-                    color: white;
-                    border: none;
-                    border-radius: 6px;
-                    padding: 6px 16px;
+                """
+                QPushButton {
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #8b5cf6, stop:1 #7c3aed);
+                    color: #fff;
+                    border: 1px solid #6d28d9;
+                    border-radius: 5px;
+                    padding: 5px 18px;
                     font-weight: 600;
                     font-size: 12px;
-                }}
-                QPushButton:hover {{ background: #6d28d9; }}
-                QPushButton:disabled {{ background: #3a2a4e; color: #6a5a7e; }}
+                }
+                QPushButton:hover {
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #9d6ef8, stop:1 #8b5cf6);
+                }
+                QPushButton:disabled {
+                    background: #1e1228;
+                    border-color: #2a1a3a;
+                    color: #3d2a52;
+                }
                 """
             )
         else:
             btn.setStyleSheet(
                 f"""
                 QPushButton {{
-                    background: {SURFACE_COLOR};
+                    background: transparent;
                     color: {TEXT_COLOR};
-                    border: 1px solid #3a3a54;
-                    border-radius: 6px;
-                    padding: 6px 14px;
+                    border: 1px solid transparent;
+                    border-radius: 5px;
+                    padding: 5px 12px;
                     font-size: 12px;
                 }}
-                QPushButton:hover {{ background: #34344e; }}
-                QPushButton:disabled {{ color: {MUTED_COLOR}; }}
+                QPushButton:hover {{
+                    background: #1e1e30;
+                    border-color: #2d2d45;
+                }}
+                QPushButton:pressed {{
+                    background: #161626;
+                }}
+                QPushButton:checked {{
+                    background: rgba(124, 58, 237, 0.18);
+                    border-color: #7c3aed;
+                    color: #a78bfa;
+                    font-weight: 600;
+                }}
+                QPushButton:checked:hover {{
+                    background: rgba(124, 58, 237, 0.28);
+                }}
+                QPushButton:disabled {{
+                    color: #2d2d45;
+                }}
                 """
             )
         return btn
@@ -330,6 +380,15 @@ class MainWindow(QMainWindow):
             f"""
             QMainWindow {{ background: {PREVIEW_BG_COLOR}; }}
             QSplitter {{ background: {PREVIEW_BG_COLOR}; }}
+            QSplitter::handle {{ background: #1a1a2e; }}
+            QToolTip {{
+                background: #1e1e30;
+                color: {TEXT_COLOR};
+                border: 1px solid #3a3a54;
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-size: 11px;
+            }}
             """
         )
 
@@ -699,7 +758,7 @@ class MainWindow(QMainWindow):
 
     def _set_status(self, message: str, success: bool = False, error: bool = False) -> None:
         color = SUCCESS_COLOR if success else (ERROR_COLOR if error else MUTED_COLOR)
-        self._status_label.setStyleSheet(f"color: {color}; font-size: 11px;")
+        self._status_label.setStyleSheet(f"color: {color}; font-size: 11px; padding: 0;")
         self._status_label.setText(message)
 
     @property
