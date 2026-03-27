@@ -585,12 +585,17 @@ class InteractiveCanvas(QGraphicsView):
         hit = self._hit_any(scene_pos)
 
         if hit:
-            if not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+            multi = bool(event.modifiers() & (
+                Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier
+            ))
+            if not multi:
                 if not hit.selected:
                     self.clear_selection()
             hit.toggle()
         else:
-            if not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+            if not (event.modifiers() & (
+                Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier
+            )):
                 self.clear_selection()
             origin = event.position().toPoint()
             self._rubber_origin = origin
