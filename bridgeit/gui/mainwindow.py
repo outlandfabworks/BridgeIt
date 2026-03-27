@@ -436,11 +436,10 @@ class MainWindow(QMainWindow):
         self._pending_settings = None
 
         if self._editing_bridge_idx >= 0:
-            # Only update the selected bridge's width — no pipeline re-run needed
+            # Update all selected bridges — no pipeline re-run needed
             from bridgeit.pipeline.bridge import mm_to_px
             width_px = mm_to_px(settings.bridge_width_mm)
-            self._preview.canvas.update_bridge_width(self._editing_bridge_idx, width_px)
-            # Keep _manual_bridges in sync so export is correct
+            self._preview.canvas.update_selected_bridges_width(width_px)
             self._manual_bridges = self._preview.canvas.get_manual_bridges()
             return
 
@@ -507,14 +506,15 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot()
     def _on_selection_changed(self) -> None:
+        from bridgeit.pipeline.bridge import px_to_mm
         canvas = self._preview.canvas
-        bridge_info = canvas.get_selected_confirmed_bridge()
-        if bridge_info is not None:
-            from bridgeit.pipeline.bridge import px_to_mm
-            idx, width_px = bridge_info
-            self._editing_bridge_idx = idx
-            self._controls.set_bridge_width_mm(round(px_to_mm(width_px), 2))
-            self._controls.set_bridge_editing_mode(True)
+        bridges = canvas.get_selected_confirmed_bridges()
+        if bridges:
+            self._editing_bridge_idx = bridges[0][0]   # flag: ≥0 means editing mode
+            # Show the width of the first selected bridge
+            width_mm = round(px_to_mm(bridges[0][1]), 2)
+            self._controls.set_bridge_width_mm(width_mm)
+            self._controls.set_bridge_editing_mode(True, count=len(bridges))
         else:
             self._editing_bridge_idx = -1
             self._controls.set_bridge_editing_mode(False)

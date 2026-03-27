@@ -194,10 +194,11 @@ class ControlsPanel(QWidget):
         for w in (self._bridge_spin, self._bridge_slider):
             w.blockSignals(False)
 
-    def set_bridge_editing_mode(self, editing: bool) -> None:
-        """Highlight the Bridge Width label when editing a selected bridge."""
+    def set_bridge_editing_mode(self, editing: bool, count: int = 1) -> None:
+        """Highlight the Bridge Width label when editing selected bridge(s)."""
         if editing:
-            self._bridge_lbl.setText("Selected Bridge")
+            label = f"{count} Bridges" if count > 1 else "Selected Bridge"
+            self._bridge_lbl.setText(label)
             self._bridge_lbl.setStyleSheet(f"color: {ACCENT_COLOR}; font-size: 12px; font-weight: 600;")
         else:
             self._bridge_lbl.setText("Bridge Width")

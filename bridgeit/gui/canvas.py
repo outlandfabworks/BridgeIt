@@ -803,17 +803,24 @@ class InteractiveCanvas(QGraphicsView):
             self._scene.removeItem(self._guide_line)
             self._guide_line = None
 
-    def get_selected_confirmed_bridge(self) -> Optional[Tuple[int, float]]:
-        """Return (bridge_index, width_px) if exactly one confirmed bridge is selected."""
-        selected = [b for b in self._bridge_items
-                    if isinstance(b, _ConfirmedBridgeItem) and b.selected]
-        if len(selected) == 1:
-            idx = selected[0].bridge_index
-            if 0 <= idx < len(self._manual_bridges):
-                entry = self._manual_bridges[idx]
-                width_px = entry[2] if len(entry) > 2 else self._bridge_width_px
-                return (idx, width_px)
-        return None
+    def get_selected_confirmed_bridges(self) -> List[Tuple[int, float]]:
+        """Return [(bridge_index, width_px), ...] for all selected confirmed bridges."""
+        result = []
+        for b in self._bridge_items:
+            if isinstance(b, _ConfirmedBridgeItem) and b.selected:
+                idx = b.bridge_index
+                if 0 <= idx < len(self._manual_bridges):
+                    entry = self._manual_bridges[idx]
+                    width_px = entry[2] if len(entry) > 2 else self._bridge_width_px
+                    result.append((idx, width_px))
+        return result
+
+    def update_selected_bridges_width(self, width_px: float) -> None:
+        """Resize all currently-selected confirmed bridges in-place."""
+        indices = [b.bridge_index for b in self._bridge_items
+                   if isinstance(b, _ConfirmedBridgeItem) and b.selected]
+        for idx in indices:
+            self.update_bridge_width(idx, width_px)
 
     def update_bridge_width(self, bridge_index: int, width_px: float) -> None:
         """Resize a confirmed bridge in-place without a full canvas reload."""
