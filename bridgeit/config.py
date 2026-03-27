@@ -1,7 +1,7 @@
 """Global configuration and defaults for BridgeIt."""
 
 APP_NAME = "BridgeIt"
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.4.0"
 
 # Pipeline defaults
 DEFAULT_BRIDGE_WIDTH_MM = 0.5
