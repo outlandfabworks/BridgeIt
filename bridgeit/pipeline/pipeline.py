@@ -16,6 +16,7 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Callable, Optional, Union
 
+# PIL is the Python Imaging Library (Pillow fork) — used to open and manipulate images
 from PIL import Image
 
 from bridgeit.config import (
@@ -31,40 +32,50 @@ from bridgeit.pipeline.remove_bg import remove_background
 from bridgeit.pipeline.trace import Path2D, get_image_size, trace_contours
 
 
+# Enum.auto() assigns sequential integer values automatically.
+# These names identify each processing stage for progress reporting.
 class Stage(Enum):
-    REMOVE_BG = auto()
-    TRACE = auto()
-    ANALYZE = auto()
-    BRIDGE = auto()
-    EXPORT = auto()
+    REMOVE_BG = auto()   # background removal
+    TRACE = auto()        # contour tracing
+    ANALYZE = auto()      # island detection
+    BRIDGE = auto()       # bridge generation
+    EXPORT = auto()       # SVG writing
 
 
 @dataclass
 class PipelineSettings:
-    bridge_width_mm: float = DEFAULT_BRIDGE_WIDTH_MM
-    contour_smoothing: float = DEFAULT_CONTOUR_SMOOTHING
-    min_contour_area: float = DEFAULT_MIN_CONTOUR_AREA
-    dpi: float = DEFAULT_DPI
+    # All user-adjustable pipeline parameters in one convenient bundle.
+    # The default values come from config.py so there is one canonical source.
+    bridge_width_mm: float = DEFAULT_BRIDGE_WIDTH_MM     # how wide each bridge is
+    contour_smoothing: float = DEFAULT_CONTOUR_SMOOTHING # path simplification amount
+    min_contour_area: float = DEFAULT_MIN_CONTOUR_AREA   # noise filter threshold
+    dpi: float = DEFAULT_DPI                              # resolution for mm↔px conversion
 
 
 @dataclass
 class PipelineResult:
     """Full pipeline output — all intermediate results attached."""
-    source_path: Optional[Path]
-    nobg_image: Optional[Image.Image] = None
-    paths: Optional[list[Path2D]] = None
-    analysis: Optional[AnalysisResult] = None
-    bridge_result: Optional[BridgeResult] = None
-    svg_path: Optional[Path] = None
-    svg_string: Optional[str] = None
-    elapsed_seconds: float = 0.0
-    error: Optional[str] = None
+    source_path: Optional[Path]                        # original input file, if any
+
+    # Each field stores the output of one pipeline stage.
+    # They are None until the pipeline reaches that stage.
+    nobg_image: Optional[Image.Image] = None           # background-removed image
+    paths: Optional[list[Path2D]] = None               # traced vector paths
+    analysis: Optional[AnalysisResult] = None          # island classification
+    bridge_result: Optional[BridgeResult] = None       # paths with bridges inserted
+    svg_path: Optional[Path] = None                    # saved SVG file path
+    svg_string: Optional[str] = None                   # SVG as a string (for preview)
+    elapsed_seconds: float = 0.0                       # total wall-clock time
+    error: Optional[str] = None                        # error message if pipeline failed
 
     @property
     def success(self) -> bool:
+        # Convenience: True if no error occurred
         return self.error is None
 
 
+# Type alias: a progress callback receives the current Stage and a human-readable message.
+# The GUI uses this to update the status bar; the CLI uses it to print to the terminal.
 ProgressCallback = Callable[[Stage, str], None]
 
 
@@ -76,7 +87,10 @@ class PipelineRunner:
         settings: Optional[PipelineSettings] = None,
         on_progress: Optional[ProgressCallback] = None,
     ) -> None:
+        # Use default settings if none were provided
         self.settings = settings or PipelineSettings()
+
+        # The progress callback is optional — the pipeline works fine without it
         self._on_progress = on_progress
 
     # ------------------------------------------------------------------
@@ -98,16 +112,20 @@ class PipelineRunner:
         Returns:
             PipelineResult with all stage outputs.
         """
+        # Record start time so we can report elapsed seconds at the end
         t0 = time.monotonic()
+
+        # If source is a file path, store it for later use in the result
         source_path = Path(source) if isinstance(source, (str, Path)) else None
         result = PipelineResult(source_path=source_path)
 
         try:
-            # Stage 1: Remove background
+            # Stage 1: Remove background — this is the slowest step for photos
+            # because it runs an AI model; logos use the faster threshold method
             self._progress(Stage.REMOVE_BG, "Removing background…")
             result.nobg_image = remove_background(source)
 
-            # Stage 2: Trace contours
+            # Stage 2: Trace the outlines of all shapes in the transparent image
             self._progress(Stage.TRACE, "Tracing contours…")
             result.paths = trace_contours(
                 result.nobg_image,
@@ -116,11 +134,11 @@ class PipelineRunner:
             )
             img_size = get_image_size(result.nobg_image)
 
-            # Stage 3: Detect islands
+            # Stage 3: Classify shapes as mainland or floating island
             self._progress(Stage.ANALYZE, "Detecting islands…")
             result.analysis = analyze_islands(result.paths, img_size)
 
-            # Stage 4: Generate bridges
+            # Stage 4: Insert bridge geometry into island paths
             self._progress(Stage.BRIDGE, "Generating bridges…")
             result.bridge_result = add_bridges(
                 result.analysis,
@@ -128,15 +146,20 @@ class PipelineRunner:
                 dpi=self.settings.dpi,
             )
 
-            # Stage 5: Export SVG
+            # Stage 5: Serialise paths to SVG format
             self._progress(Stage.EXPORT, "Exporting SVG…")
             result.svg_string = export_svg_string(result.bridge_result)
+
+            # Optionally save the SVG to disk if the caller provided a path
             if output_svg:
                 result.svg_path = export_svg(result.bridge_result, output_svg)
 
         except Exception as exc:
+            # Capture any error from any stage and store it in the result.
+            # This lets the caller decide how to display it rather than crashing.
             result.error = str(exc)
 
+        # Calculate total processing time
         result.elapsed_seconds = time.monotonic() - t0
         return result
 
@@ -148,10 +171,16 @@ class PipelineRunner:
 
         Skips the slow remove_bg stage, useful for live preview updates.
         """
+        # This method is called when the user adjusts a setting slider while
+        # an image is already loaded — we reuse the cached background-removed
+        # image and only re-run the fast stages.
         t0 = time.monotonic()
+
+        # nobg_image is already provided by the caller (cached from the full run)
         result = PipelineResult(source_path=None, nobg_image=nobg_image)
 
         try:
+            # Re-trace contours with new smoothing/area settings
             self._progress(Stage.TRACE, "Tracing contours…")
             result.paths = trace_contours(
                 nobg_image,
@@ -160,9 +189,11 @@ class PipelineRunner:
             )
             img_size = get_image_size(nobg_image)
 
+            # Re-classify islands (island membership can change with different smoothing)
             self._progress(Stage.ANALYZE, "Detecting islands…")
             result.analysis = analyze_islands(result.paths, img_size)
 
+            # Re-generate bridges with the new width setting
             self._progress(Stage.BRIDGE, "Generating bridges…")
             result.bridge_result = add_bridges(
                 result.analysis,
@@ -170,6 +201,7 @@ class PipelineRunner:
                 dpi=self.settings.dpi,
             )
 
+            # Produce an SVG string for the canvas to display
             self._progress(Stage.EXPORT, "Rendering SVG…")
             result.svg_string = export_svg_string(result.bridge_result)
 
@@ -184,5 +216,7 @@ class PipelineRunner:
     # ------------------------------------------------------------------
 
     def _progress(self, stage: Stage, message: str) -> None:
+        # Fire the progress callback if one was provided.
+        # The guard prevents a crash when the runner is used without a callback.
         if self._on_progress:
             self._on_progress(stage, message)

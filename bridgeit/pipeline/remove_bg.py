@@ -35,11 +35,15 @@ def remove_background(source: Union[str, Path, Image.Image]) -> Image.Image:
         ValueError: If the image cannot be processed.
         RuntimeError: If rembg fails and no fallback can be applied.
     """
+    # Load whatever form of input was given into a PIL Image object
     img = _load_image(source)
 
+    # Choose the removal strategy based on whether this looks like a logo
     if _is_flat_graphic(img):
+        # Logos/flat graphics: use the fast colour-threshold approach
         return _threshold_removal(img)
     else:
+        # Real photos: use the AI model for accurate subject detection
         return _rembg_removal(img)
 
 
@@ -53,17 +57,26 @@ def _is_flat_graphic(img: Image.Image) -> bool:
     Heuristic: sample the four corners.  If they are all very similar in
     colour, the image almost certainly has a uniform background.
     """
+    # Convert to RGB (3 channels) so we can measure colour variation
     arr = np.array(img.convert("RGB"), dtype=np.float32)
     h, w = arr.shape[:2]
+
+    # r is the size of the corner sample region (a small fraction of the image)
     r = max(1, min(h, w) // 20)   # sample region size
 
+    # Sample the average RGB colour from each corner of the image
     corners = [
-        arr[:r,  :r ].mean(axis=(0, 1)),
-        arr[:r,  -r:].mean(axis=(0, 1)),
-        arr[-r:, :r ].mean(axis=(0, 1)),
-        arr[-r:, -r:].mean(axis=(0, 1)),
+        arr[:r,  :r ].mean(axis=(0, 1)),   # top-left corner
+        arr[:r,  -r:].mean(axis=(0, 1)),   # top-right corner
+        arr[-r:, :r ].mean(axis=(0, 1)),   # bottom-left corner
+        arr[-r:, -r:].mean(axis=(0, 1)),   # bottom-right corner
     ]
+
+    # Stack the four (R,G,B) averages into a 4×3 array
     corners_arr = np.array(corners)   # shape (4, 3)
+
+    # max_spread is the largest colour-channel standard deviation across corners.
+    # A low value means all corners look similar → uniform background.
     max_spread = float(np.max(np.std(corners_arr, axis=0)))
     return max_spread < 25.0          # low variance → uniform background
 
@@ -79,33 +92,45 @@ def _threshold_removal(img: Image.Image) -> Image.Image:
     marking every pixel whose colour is *close* to that background colour
     as transparent.
     """
+    # Work in RGB for colour distance calculations
     rgb = img.convert("RGB")
     arr = np.array(rgb, dtype=np.float32)
     h, w = arr.shape[:2]
+
+    # The sample region size — a small patch from each corner
     r = max(1, min(h, w) // 20)
 
-    # Estimate background colour as the average of the four corner regions
+    # Collect the corner pixel patches for averaging
     corners = [
-        arr[:r,  :r ],
-        arr[:r,  -r:],
-        arr[-r:, :r ],
-        arr[-r:, -r:],
+        arr[:r,  :r ],    # top-left patch
+        arr[:r,  -r:],    # top-right patch
+        arr[-r:, :r ],    # bottom-left patch
+        arr[-r:, -r:],    # bottom-right patch
     ]
+
+    # Estimate background colour as the average of the four corner regions.
+    # np.concatenate stacks all patches into one long list of (R,G,B) rows.
     bg_color = np.mean(np.concatenate([c.reshape(-1, 3) for c in corners], axis=0), axis=0)
 
-    # Per-pixel Euclidean distance from background colour
+    # For each pixel, compute how far its colour is from the background colour.
+    # diff is the per-channel difference; dist collapses to a single distance.
     diff = arr - bg_color                             # (H, W, 3)
     dist = np.sqrt(np.sum(diff ** 2, axis=2))         # (H, W)
 
-    # Threshold: pixels close to bg → transparent
+    # Convert distance to alpha (opacity):
+    # pixels very close to bg_color get alpha=0 (transparent);
+    # pixels far away get alpha=255 (fully opaque).
+    # The * 6 factor sharpens the transition edge.
     threshold = 40.0
     alpha = np.clip((dist - threshold) * 6, 0, 255).astype(np.uint8)
 
-    # Morphological cleanup to smooth jagged alpha edges
+    # Morphological cleanup: MORPH_CLOSE fills small holes in the alpha mask,
+    # smoothing out jagged edges left by the per-pixel threshold.
     import cv2
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     alpha = cv2.morphologyEx(alpha, cv2.MORPH_CLOSE, kernel, iterations=2)
 
+    # Combine the original RGB data with our computed alpha channel into RGBA
     rgba = np.dstack([arr.astype(np.uint8), alpha])
     return Image.fromarray(rgba, "RGBA")
 
@@ -115,13 +140,17 @@ def _threshold_removal(img: Image.Image) -> Image.Image:
 # ---------------------------------------------------------------------------
 
 def _rembg_removal(img: Image.Image) -> Image.Image:
+    # rembg is an optional dependency that wraps the U2Net AI segmentation model.
+    # It's kept as a lazy import so the app starts even if rembg isn't installed.
     try:
         from rembg import remove as rembg_remove
     except ImportError as exc:
         raise RuntimeError("rembg is not installed. Run: pip install rembg") from exc
 
+    # rembg operates on raw image bytes (PNG/JPEG), not PIL objects
     img_bytes = _image_to_bytes(img)
     try:
+        # rembg returns RGBA bytes with the background erased by the AI model
         result_bytes = rembg_remove(img_bytes)
     except Exception as exc:
         raise RuntimeError(
@@ -129,6 +158,7 @@ def _rembg_removal(img: Image.Image) -> Image.Image:
             "Check your internet connection — rembg needs to download the AI model on first use."
         ) from exc
 
+    # Wrap the result bytes back into a PIL Image in RGBA mode
     return Image.open(io.BytesIO(result_bytes)).convert("RGBA")
 
 
@@ -137,12 +167,19 @@ def _rembg_removal(img: Image.Image) -> Image.Image:
 # ---------------------------------------------------------------------------
 
 def _load_image(source: Union[str, Path, Image.Image]) -> Image.Image:
+    # If the caller already has a PIL Image, make a copy so we don't mutate
+    # the original (PIL images are mutable).
     if isinstance(source, Image.Image):
         return source.copy()
 
     path = Path(source)
+
+    # Raise a clear error if the file doesn't exist, rather than a cryptic
+    # PIL error later in the chain.
     if not path.exists():
         raise FileNotFoundError(f"Image file not found: {path}")
+
+    # Reject unsupported formats early so the error message is informative
     if path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}:
         raise ValueError(f"Unsupported image format: {path.suffix}")
 
@@ -150,7 +187,12 @@ def _load_image(source: Union[str, Path, Image.Image]) -> Image.Image:
 
 
 def _image_to_bytes(img: Image.Image) -> bytes:
+    # Write the PIL image into an in-memory byte buffer.
+    # rembg and other tools accept bytes, not PIL objects.
     buf = io.BytesIO()
+
+    # Use PNG for images that have transparency (RGBA or palette),
+    # JPEG for regular RGB photos (smaller file, faster to process).
     fmt = "PNG" if img.mode in ("RGBA", "P") else "JPEG"
     img.save(buf, format=fmt)
     return buf.getvalue()
@@ -161,16 +203,21 @@ def _image_to_bytes(img: Image.Image) -> bytes:
 # ---------------------------------------------------------------------------
 
 def _validate(image_path: str) -> None:
+    # This function is only called when running this file directly (see __main__).
+    # It exercises the full background removal flow and prints diagnostic info.
     print(f"[remove_bg] Processing: {image_path}")
     img = _load_image(image_path)
     flat = _is_flat_graphic(img)
     print(f"[remove_bg] Detected as: {'flat graphic' if flat else 'photo'}")
 
     result = remove_background(image_path)
+
+    # Save the result next to the input file with a _nobg suffix
     out_path = Path(image_path).with_stem(Path(image_path).stem + "_nobg").with_suffix(".png")
     result.save(out_path)
     print(f"[remove_bg] Saved: {out_path}  size={result.size}  mode={result.mode}")
 
+    # Count transparent pixels (alpha == 0) to verify background was removed
     alpha = result.split()[3]
     pixels = alpha.tobytes()
     transparent = pixels.count(b"\x00")

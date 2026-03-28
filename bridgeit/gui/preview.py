@@ -14,7 +14,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+# Qt core types: signals/slots, geometry, and alignment flags
 from PyQt6.QtCore import QMimeData, QPointF, QRectF, QSizeF, Qt, pyqtSignal
+
+# Qt graphics/painting types
 from PyQt6.QtGui import (
     QColor,
     QDragEnterEvent,
@@ -25,6 +28,12 @@ from PyQt6.QtGui import (
     QPixmap,
     QWheelEvent,
 )
+
+# Qt widget types
+# QFrame = a widget that can draw a border/line
+# QLabel = a widget that displays text or images
+# QSizePolicy = describes how a widget should resize
+# QStackedWidget = a container that shows only one "page" at a time
 from PyQt6.QtWidgets import (
     QFrame,
     QLabel,
@@ -38,21 +47,29 @@ from bridgeit.config import MUTED_COLOR, PREVIEW_BG_COLOR, TEXT_COLOR
 from bridgeit.gui.canvas import InteractiveCanvas
 
 
+# DropZone is the initial "empty state" screen shown before any image is loaded.
+# It tells the user to drag a file in, and accepts drop events.
 class DropZone(QWidget):
     """Initial drop target shown before any image is loaded."""
 
+    # pyqtSignal is Qt's mechanism for sending notifications between objects.
+    # file_dropped carries the dropped file path as a string.
     file_dropped = pyqtSignal(str)
     open_clicked = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+
+        # Enable this widget to receive drag-and-drop events from the OS
         self.setAcceptDrops(True)
         self._build_ui()
 
     def _build_ui(self) -> None:
+        # QVBoxLayout stacks child widgets vertically, one above the other
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
+        # Large down-arrow icon — purely decorative hint for the user
         icon_lbl = QLabel("⬇")
         icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon_lbl.setStyleSheet("font-size: 48px; color: #4a4a6a;")
@@ -65,11 +82,13 @@ class DropZone(QWidget):
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sub.setStyleSheet(f"color: {MUTED_COLOR}; font-size: 12px;")
 
+        # RichText allows <b>bold</b> HTML within the label text
         hint = QLabel("or click <b>Open Image</b> in the toolbar")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setStyleSheet(f"color: {MUTED_COLOR}; font-size: 11px;")
         hint.setTextFormat(Qt.TextFormat.RichText)
 
+        # addStretch() inserts elastic space that pushes content to the centre
         layout.addStretch()
         layout.addWidget(icon_lbl)
         layout.addSpacing(12)
@@ -81,103 +100,142 @@ class DropZone(QWidget):
         layout.addStretch()
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        # Called when the user drags something over this widget.
+        # We check if the dragged item is a supported image file before accepting it.
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()
+            # Only accept PNG and JPEG files — reject everything else
             if urls and Path(urls[0].toLocalFile()).suffix.lower() in {".png", ".jpg", ".jpeg"}:
-                event.acceptProposedAction()
+                event.acceptProposedAction()   # signal "yes, I'll accept this drop"
                 return
-        event.ignore()
+        event.ignore()   # reject anything else
 
     def dropEvent(self, event: QDropEvent) -> None:
+        # Called when the user releases the dragged file over this widget.
+        # We emit the file path so the main window can start processing it.
         urls = event.mimeData().urls()
         if urls:
-            path = urls[0].toLocalFile()
+            path = urls[0].toLocalFile()   # convert URL to a local filesystem path
             self.file_dropped.emit(path)
 
 
+# ImagePreview shows a single background-removed image with zoom and pan support.
+# It inherits from QLabel, which can display a QPixmap (a pre-loaded image bitmap).
 class ImagePreview(QLabel):
     """Zoomable/pannable image preview."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._pixmap: Optional[QPixmap] = None
-        self._zoom = 1.0
-        self._offset = QPointF(0, 0)
-        self._drag_start: Optional[QPointF] = None
+        self._pixmap: Optional[QPixmap] = None   # the image to display
+        self._zoom = 1.0                          # current zoom level (1.0 = fit to window)
+        self._offset = QPointF(0, 0)             # pan offset in pixels
+        self._drag_start: Optional[QPointF] = None  # mouse position at start of pan drag
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setAcceptDrops(True)
+        # Expanding policy lets the widget grow to fill all available space
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
     def set_pixmap(self, pixmap: QPixmap) -> None:
+        # Load a new image and reset zoom/pan to the default "fit in window" state
         self._pixmap = pixmap
         self._zoom = 1.0
         self._offset = QPointF(0, 0)
-        self.update()
+        self.update()   # request a repaint from Qt
 
     def paintEvent(self, event) -> None:
+        # paintEvent is called by Qt whenever the widget needs to be redrawn.
+        # We override it to draw the image with our custom zoom and pan applied.
         if not self._pixmap:
+            # No image loaded yet — fall back to QLabel's default (blank) painting
             super().paintEvent(event)
             return
 
+        # QPainter is Qt's drawing API — think of it as a canvas with a paintbrush
         painter = QPainter(self)
+
+        # SmoothPixmapTransform uses bilinear filtering when scaling — this makes
+        # the image look smooth instead of blocky when zoomed in or out.
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
-        w, h = self.width(), self.height()
-        pw, ph = self._pixmap.width(), self._pixmap.height()
+        w, h = self.width(), self.height()       # size of this widget in screen pixels
+        pw, ph = self._pixmap.width(), self._pixmap.height()  # size of the image
 
-        # Fit-to-window scale
+        # Compute the scale needed to fit the image in the window, then apply zoom.
+        # min() ensures we scale to fit the smaller dimension (letterboxing).
         scale = min(w / pw, h / ph) * self._zoom
         dw, dh = pw * scale, ph * scale
+
+        # Centre the image in the widget, then offset by the pan amount
         x = (w - dw) / 2 + self._offset.x()
         y = (h - dh) / 2 + self._offset.y()
 
         painter.drawPixmap(int(x), int(y), int(dw), int(dh), self._pixmap)
 
     def wheelEvent(self, event: QWheelEvent) -> None:
+        # angleDelta().y() is positive when scrolling up (zoom in) and
+        # negative when scrolling down (zoom out).
         delta = event.angleDelta().y()
         factor = 1.15 if delta > 0 else 1 / 1.15
+
+        # Clamp zoom level between 10% and 2000% to prevent extreme values
         self._zoom = max(0.1, min(self._zoom * factor, 20.0))
         self.update()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        # Middle-click starts a pan drag — record where the mouse is
         if event.button() == Qt.MouseButton.MiddleButton:
             self._drag_start = event.position()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        # While middle-click is held, compute how far the mouse has moved
+        # and shift the image's offset by that amount (panning)
         if self._drag_start is not None:
             delta = event.position() - self._drag_start
             self._offset += delta
-            self._drag_start = event.position()
+            self._drag_start = event.position()  # update start for next frame
             self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        # Middle-click released — stop panning
         if event.button() == Qt.MouseButton.MiddleButton:
             self._drag_start = None
 
 
+# PreviewPanel is a QStackedWidget — a container that holds multiple "pages"
+# (drop zone, image view, interactive canvas) and shows only one at a time.
+# Think of it like a deck of cards where only the top card is visible.
 class PreviewPanel(QStackedWidget):
     """Main preview panel — manages drop zone, image preview, and interactive canvas."""
 
+    # Emitted when a file is dropped anywhere on this panel
     file_dropped = pyqtSignal(str)
 
-    # Page indices
-    PAGE_DROP   = 0
-    PAGE_IMAGE  = 1
-    PAGE_CANVAS = 2
+    # Page indices — used with setCurrentIndex() to switch the visible page
+    PAGE_DROP   = 0   # empty state / file drop target
+    PAGE_IMAGE  = 1   # background-removed image view
+    PAGE_CANVAS = 2   # interactive cut-path editor
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+
+        # Accept drops anywhere on the panel, not just the DropZone widget
         self.setAcceptDrops(True)
 
+        # Create each of the three pages
         self._drop_zone   = DropZone()
         self._img_preview = ImagePreview()
         self._canvas      = InteractiveCanvas()
 
+        # Add pages in order — their indices must match PAGE_DROP/IMAGE/CANVAS
         self.addWidget(self._drop_zone)
         self.addWidget(self._img_preview)
         self.addWidget(self._canvas)
 
+        # Forward file_dropped signals from the DropZone up to our own signal
+        # so the main window only needs to connect to PreviewPanel.file_dropped
         self._drop_zone.file_dropped.connect(self.file_dropped)
+
+        # Start on the empty drop zone page
         self.setCurrentIndex(self.PAGE_DROP)
         self.setStyleSheet(f"background: {PREVIEW_BG_COLOR};")
 
@@ -187,29 +245,47 @@ class PreviewPanel(QStackedWidget):
 
     @property
     def canvas(self) -> InteractiveCanvas:
+        # Expose the canvas so the main window can load paths and connect signals
         return self._canvas
 
     def show_drop_zone(self) -> None:
+        # Switch to the empty-state page (e.g. after processing fails)
         self.setCurrentIndex(self.PAGE_DROP)
 
     def show_image(self, pixmap: QPixmap) -> None:
+        # Load a new image into the image preview and switch to that page
         self._img_preview.set_pixmap(pixmap)
         self.setCurrentIndex(self.PAGE_IMAGE)
 
     def show_canvas(self) -> None:
+        # Switch to the interactive path-editor canvas page
         self.setCurrentIndex(self.PAGE_CANVAS)
 
     def is_canvas_visible(self) -> bool:
+        # True when the interactive canvas is the currently visible page
         return self.currentIndex() == self.PAGE_CANVAS
 
     def show_image_from_pil(self, pil_image) -> None:
         """Convert a PIL Image to QPixmap and display it."""
+        # Qt works with QPixmap/QImage; PIL uses its own Image type.
+        # We convert by going through QImage which accepts raw byte arrays.
         from PyQt6.QtGui import QImage
+
+        # QImage requires RGBA mode — convert if needed
         if pil_image.mode != "RGBA":
             pil_image = pil_image.convert("RGBA")
+
         w, h = pil_image.size
+
+        # tobytes("raw", "RGBA") gives a flat bytes array in row-major RGBA order
         data = bytes(pil_image.tobytes("raw", "RGBA"))
+
+        # Build a QImage from the raw bytes; the stride (row width in bytes) is w*4
+        # .copy() is needed because QImage doesn't own the `data` buffer — without it,
+        # the data could be garbage-collected while Qt is still using it.
         qt_image = QImage(data, w, h, w * 4, QImage.Format.Format_RGBA8888).copy()
+
+        # QPixmap is an optimised, screen-ready version of QImage
         pixmap = QPixmap.fromImage(qt_image)
         self.show_image(pixmap)
 
@@ -218,9 +294,11 @@ class PreviewPanel(QStackedWidget):
     # ------------------------------------------------------------------
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        # Delegate to the DropZone's logic so we don't duplicate the validation
         self._drop_zone.dragEnterEvent(event)
 
     def dropEvent(self, event: QDropEvent) -> None:
+        # Convert the drop URL to a path and emit our file_dropped signal
         urls = event.mimeData().urls()
         if urls:
             self.file_dropped.emit(urls[0].toLocalFile())

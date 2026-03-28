@@ -27,7 +27,8 @@ def _run_gui() -> None:
     QApplication.setApplicationDisplayName("BridgeIt")
     QApplication.setOrganizationName("BridgeIt")
 
-    # QApplication is the root object for every PyQt6 app.
+    # QApplication is the root object for every PyQt6 app — it manages
+    # the event loop that keeps the window alive and responsive.
     # sys.argv lets Qt parse any Qt-specific command-line flags.
     app = QApplication(sys.argv)
 
@@ -35,16 +36,19 @@ def _run_gui() -> None:
     # which controls the taskbar icon and app name.
     app.setDesktopFileName("BridgeIt")   # links to BridgeIt.desktop on Linux
 
-    # QPalette lets us set a dark colour theme for Qt's own widgets
-    # (e.g. scroll bars) that the stylesheet doesn't fully cover.
+    # QPalette is Qt's colour theme system; setting it here ensures that
+    # widgets drawn by the OS (like scroll bars) also use our dark theme,
+    # not just the widgets we style manually via stylesheets.
     palette = QPalette()
 
     # ColorRole.Window is the background of top-level windows
     palette.setColor(QPalette.ColorRole.Window, QColor(PREVIEW_BG_COLOR))
+    # ColorRole.WindowText is the default text colour for window backgrounds
     palette.setColor(QPalette.ColorRole.WindowText, QColor(TEXT_COLOR))
 
     # Base is the background of text-editing areas (e.g. input boxes)
     palette.setColor(QPalette.ColorRole.Base, QColor("#16162a"))
+    # AlternateBase is used for alternating row colours in lists/tables
     palette.setColor(QPalette.ColorRole.AlternateBase, QColor("#1e1e2e"))
     palette.setColor(QPalette.ColorRole.Text, QColor(TEXT_COLOR))
 
@@ -55,19 +59,23 @@ def _run_gui() -> None:
     # Highlight is the selection colour (e.g. text selected in a spinbox)
     palette.setColor(QPalette.ColorRole.Highlight, QColor("#7c3aed"))
     palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
+
+    # Apply our palette so the entire application uses the dark theme
     app.setPalette(palette)
 
     # Create and display the main window
     window = MainWindow()
     window.show()
 
-    # app.exec() starts the Qt event loop — it blocks until the window closes,
-    # then sys.exit() relays the exit code to the OS.
+    # app.exec() starts the Qt event loop — it blocks here, processing user
+    # input and screen redraws, until the window is closed.
+    # sys.exit() relays the exit code to the OS so scripts can detect failure.
     sys.exit(app.exec())
 
 
 def _run_cli(args: list[str]) -> None:
-    # In CLI mode we only import what's needed for the processing pipeline
+    # In CLI mode we only import what's needed for the processing pipeline.
+    # This avoids loading PyQt6 on systems without a display.
     import argparse
     from bridgeit.pipeline.pipeline import PipelineRunner, PipelineSettings
 
@@ -82,9 +90,11 @@ def _run_cli(args: list[str]) -> None:
     parser.add_argument("--smoothing", type=float, default=2.0, help="Contour smoothing factor")
     parser.add_argument("--min-area", type=float, default=100.0, help="Minimum contour area (px²)")
 
+    # Parse the arguments list into a Namespace object with named attributes
     parsed = parser.parse_args(args)
 
-    # Build a settings object from the parsed arguments
+    # Build a settings object from the parsed arguments.
+    # PipelineSettings is a simple dataclass that bundles all tunable values.
     settings = PipelineSettings(
         bridge_width_mm=parsed.bridge_width,
         contour_smoothing=parsed.smoothing,
@@ -103,11 +113,13 @@ def _run_cli(args: list[str]) -> None:
     result = runner.run(parsed.image, output_svg=parsed.output)
 
     # If anything went wrong inside the pipeline, print the error and exit
+    # with a non-zero code so the caller knows it failed.
     if result.error:
         print(f"ERROR: {result.error}", file=sys.stderr)
         sys.exit(1)
 
-    # Print a summary of what was found and created
+    # Print a summary of what was found and created.
+    # These counts come from the intermediate analysis/bridge result objects.
     print(f"Islands:  {len(result.analysis.islands)}")
     print(f"Bridges:  {len(result.bridge_result.bridges)}")
     print(f"Paths:    {len(result.bridge_result.paths)}")
@@ -120,10 +132,13 @@ def _run_cli(args: list[str]) -> None:
 
 
 def main() -> None:
-    # sys.argv[1:] strips the script name from the argument list
+    # sys.argv[1:] strips the script name from the argument list,
+    # leaving only the arguments the user actually typed.
     args = sys.argv[1:]
 
-    # --cli flag switches from GUI mode to headless command-line mode
+    # --cli flag switches from GUI mode to headless command-line mode.
+    # We remove it from the list before passing args to the CLI parser
+    # so argparse doesn't see it as an unknown flag.
     if "--cli" in args:
         args.remove("--cli")
         _run_cli(args)

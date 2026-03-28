@@ -19,7 +19,8 @@ from PIL import Image
 
 from bridgeit.config import DEFAULT_CONTOUR_SMOOTHING, DEFAULT_MIN_CONTOUR_AREA
 
-# Type alias
+# Type alias: a 2D path is simply a list of (x, y) float coordinate pairs.
+# This makes function signatures much easier to read.
 Path2D = List[Tuple[float, float]]
 
 
@@ -41,11 +42,18 @@ def trace_contours(
         List of closed paths. Each path is a list of (x, y) float tuples.
         The first point == last point (closed loop).
     """
+    # Ensure the image is in RGBA mode so we can access the alpha channel.
+    # The alpha channel encodes which pixels are foreground vs. background.
     if img.mode != "RGBA":
         img = img.convert("RGBA")
 
+    # Step 1: Extract the alpha channel and turn it into a clean binary mask
     alpha = _extract_alpha(img)
+
+    # Step 2: Find the outlines of all shapes in the binary mask
     contours = _find_contours(alpha, min_area)
+
+    # Step 3: Convert those outlines into simplified (x, y) point lists
     paths = _contours_to_paths(contours, smoothing)
     return paths
 
@@ -56,14 +64,24 @@ def _extract_alpha(img: Image.Image) -> np.ndarray:
     Applies a Gaussian blur before re-thresholding so that the pixel-grid
     staircase on diagonal edges is smoothed out, producing cleaner contours.
     """
+    # PIL's split() returns separate R, G, B, A channels.
+    # Index [3] is the alpha channel — 0 = transparent, 255 = opaque.
     alpha = np.array(img.split()[3])          # 0-255
+
+    # Threshold: any pixel with alpha > 10 becomes white (255),
+    # fully transparent pixels become black (0).
+    # This gives us a hard foreground/background mask.
     _, binary = cv2.threshold(alpha, 10, 255, cv2.THRESH_BINARY)
 
-    # Blur then re-threshold: rounds jagged pixel boundaries into smooth edges
+    # Gaussian blur softens the staircase edges that come from pixel-perfect
+    # alpha channels, then we threshold again to get a clean binary result.
     blurred = cv2.GaussianBlur(binary, (7, 7), 2.0)
     _, binary = cv2.threshold(blurred, 127, 255, cv2.THRESH_BINARY)
 
-    # Morphological cleanup to remove single-pixel speckles
+    # Morphological operations clean up the mask:
+    # MORPH_CLOSE fills tiny holes inside the foreground shape.
+    # MORPH_OPEN  removes tiny isolated specks outside the shape.
+    # An ellipse kernel gives smoother results than a square one.
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=2)
     binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
@@ -77,11 +95,19 @@ def _find_contours(binary: np.ndarray, min_area: float) -> List[np.ndarray]:
     interior cutouts are included as separate cut paths, which is correct
     for laser cutting.
     """
+    # cv2.findContours returns a list of contours.
+    # RETR_TREE retrieves every contour including nested holes (not just outer edges).
+    # CHAIN_APPROX_TC89_L1 compresses straight segments to save memory/points.
     contours, _ = cv2.findContours(
         binary, cv2.RETR_TREE, cv2.CHAIN_APPROX_TC89_L1
     )
+
+    # Discard any contour smaller than min_area — these are noise, dust, or
+    # JPEG compression artefacts, not real design elements.
     filtered = [c for c in contours if cv2.contourArea(c) >= min_area]
-    # Sort largest → smallest so primary shape comes first
+
+    # Sort largest → smallest so the primary (outer) shape comes first in the list.
+    # This matters for the island-detection stage that follows.
     filtered.sort(key=cv2.contourArea, reverse=True)
     return filtered
 
@@ -90,21 +116,34 @@ def _contours_to_paths(contours: List[np.ndarray], smoothing: float) -> List[Pat
     """Convert OpenCV contours to simplified (x, y) path lists."""
     paths: List[Path2D] = []
     for contour in contours:
+        # A contour needs at least 3 points to form any kind of shape
         if len(contour) < 3:
             continue
 
         if smoothing > 0:
+            # arcLength measures the perimeter of the contour.
+            # We use it to scale epsilon so the smoothing is proportional
+            # to the size of the shape, not an absolute pixel value.
             peri = cv2.arcLength(contour, closed=True)
-            # Use a small fixed fraction of perimeter to avoid
-            # over-simplification on dense contours (text, curves)
+
+            # epsilon is the maximum allowed deviation when simplifying.
+            # The 0.001 factor keeps it conservative — only removes truly
+            # redundant points, not important curve-defining ones.
             epsilon = max(1.0, smoothing * peri * 0.001)
+
+            # approxPolyDP (Douglas-Peucker algorithm) removes points that
+            # deviate less than epsilon from the simplified line.
             contour = cv2.approxPolyDP(contour, epsilon, closed=True)
 
+        # After simplification some tiny contours may degenerate below 3 pts
         if len(contour) < 3:
             continue
 
+        # OpenCV contours have shape (N, 1, 2); we flatten to a plain list of (x,y)
         pts: Path2D = [(float(pt[0][0]), float(pt[0][1])) for pt in contour]
-        # Close the loop
+
+        # Close the loop: append the first point at the end if it isn't already there.
+        # A closed path is needed so SVG's Z command and Shapely polygons work correctly.
         if pts[0] != pts[-1]:
             pts.append(pts[0])
         paths.append(pts)
@@ -114,6 +153,8 @@ def _contours_to_paths(contours: List[np.ndarray], smoothing: float) -> List[Pat
 
 def get_image_size(img: Image.Image) -> Tuple[int, int]:
     """Return (width, height) of image in pixels."""
+    # PIL's .size property already returns (width, height) — this thin wrapper
+    # gives the rest of the pipeline a named function to call.
     return img.size
 
 
@@ -122,6 +163,8 @@ def get_image_size(img: Image.Image) -> Tuple[int, int]:
 # ---------------------------------------------------------------------------
 
 def _validate(image_path: str) -> None:
+    # This function is only called when running this module directly.
+    # It traces contours from an image and saves a debug visualisation.
     print(f"[trace] Processing: {image_path}")
     img = Image.open(image_path).convert("RGBA")
     paths = trace_contours(img)
@@ -129,10 +172,11 @@ def _validate(image_path: str) -> None:
     for i, p in enumerate(paths):
         print(f"  contour {i}: {len(p)} points")
 
-    # Save a debug PNG with contours drawn
+    # Draw each contour in green on a black canvas for visual debugging
     from pathlib import Path
     import numpy as np
 
+    # Create a blank black image the same size as the input
     canvas = np.zeros((*img.size[::-1], 3), dtype=np.uint8)
     for path in paths:
         pts = np.array([[int(x), int(y)] for x, y in path], dtype=np.int32)

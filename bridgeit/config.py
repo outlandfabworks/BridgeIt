@@ -26,6 +26,7 @@ DEFAULT_DPI = 96                      # assumed screen DPI for mm↔px conversio
 
 # ── UI colour palette ──────────────────────────────────────────────────────
 # Hex colour strings used throughout the stylesheet and canvas rendering.
+# All colours are standard HTML hex codes (#RRGGBB).
 
 # The dark background colour for the preview area
 PREVIEW_BG_COLOR = "#1e1e2e"
