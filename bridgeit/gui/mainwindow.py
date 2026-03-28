@@ -283,11 +283,11 @@ class MainWindow(QMainWindow):
         )
         hlay.addWidget(self._logo_lbl)
 
-        name_lbl = QLabel(APP_NAME)
-        name_lbl.setStyleSheet(
+        self._name_lbl = QLabel(APP_NAME)
+        self._name_lbl.setStyleSheet(
             f"color: {t['text']}; font-size: 15px; font-weight: 700; letter-spacing: 0.5px;"
         )
-        hlay.addWidget(name_lbl)
+        hlay.addWidget(self._name_lbl)
 
         ver_lbl = QLabel(f"  v{APP_VERSION}")
         ver_lbl.setStyleSheet(f"color: {t['text_muted']}; font-size: 10px; padding-top: 3px;")
@@ -626,6 +626,12 @@ class MainWindow(QMainWindow):
             self._logo_lbl.setStyleSheet(
                 f"color: {t['accent']}; font-size: 14px; padding: 0 4px 0 4px;"
             )
+        if hasattr(self, "_name_lbl"):
+            self._name_lbl.setStyleSheet(
+                f"color: {t['text']}; font-size: 15px; font-weight: 700; letter-spacing: 0.5px;"
+            )
+        if hasattr(self, "_preview"):
+            self._preview._drop_zone.update_theme()
 
     # ------------------------------------------------------------------
     # Slots

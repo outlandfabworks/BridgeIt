@@ -72,34 +72,42 @@ class DropZone(QWidget):
         t = current_theme()
 
         # Large down-arrow icon — purely decorative hint for the user
-        icon_lbl = QLabel("⬇")
-        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_lbl.setStyleSheet(f"font-size: 48px; color: {t['border']};")
+        self._icon_lbl = QLabel("⬇")
+        self._icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._icon_lbl.setStyleSheet(f"font-size: 48px; color: {t['border']};")
 
-        title = QLabel("Drop an image here")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet(f"color: {t['text']}; font-size: 18px; font-weight: 600;")
+        self._title_lbl = QLabel("Drop an image here")
+        self._title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._title_lbl.setStyleSheet(f"color: {t['text']}; font-size: 18px; font-weight: 600;")
 
-        sub = QLabel("PNG or JPG — background will be removed automatically")
-        sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sub.setStyleSheet(f"color: {t['text_muted']}; font-size: 12px;")
+        self._sub_lbl = QLabel("PNG or JPG — background will be removed automatically")
+        self._sub_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._sub_lbl.setStyleSheet(f"color: {t['text_muted']}; font-size: 12px;")
 
         # RichText allows <b>bold</b> HTML within the label text
-        hint = QLabel(f"or click <b>⊡ Open</b> in the toolbar")
-        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint.setStyleSheet(f"color: {t['text_muted']}; font-size: 11px;")
-        hint.setTextFormat(Qt.TextFormat.RichText)
+        self._hint_lbl = QLabel(f"or click <b>⊡ Open</b> in the toolbar")
+        self._hint_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._hint_lbl.setStyleSheet(f"color: {t['text_muted']}; font-size: 11px;")
+        self._hint_lbl.setTextFormat(Qt.TextFormat.RichText)
 
         # addStretch() inserts elastic space that pushes content to the centre
         layout.addStretch()
-        layout.addWidget(icon_lbl)
+        layout.addWidget(self._icon_lbl)
         layout.addSpacing(12)
-        layout.addWidget(title)
+        layout.addWidget(self._title_lbl)
         layout.addSpacing(4)
-        layout.addWidget(sub)
+        layout.addWidget(self._sub_lbl)
         layout.addSpacing(8)
-        layout.addWidget(hint)
+        layout.addWidget(self._hint_lbl)
         layout.addStretch()
+
+    def update_theme(self) -> None:
+        """Re-apply the active theme colours to all drop zone labels."""
+        t = current_theme()
+        self._icon_lbl.setStyleSheet(f"font-size: 48px; color: {t['border']};")
+        self._title_lbl.setStyleSheet(f"color: {t['text']}; font-size: 18px; font-weight: 600;")
+        self._sub_lbl.setStyleSheet(f"color: {t['text_muted']}; font-size: 12px;")
+        self._hint_lbl.setStyleSheet(f"color: {t['text_muted']}; font-size: 11px;")
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         # Called when the user drags something over this widget.
