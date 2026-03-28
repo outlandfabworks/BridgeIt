@@ -736,14 +736,13 @@ class MainWindow(QMainWindow):
             # 1. Take all pipeline paths, skipping any the user deleted
             active_paths = [p for i, p in enumerate(br.paths) if i not in self._excluded_paths]
 
-            # 2. Append each manual bridge as a solid rectangle path
-            for bridge_data in self._manual_bridges:
-                pt1, pt2 = bridge_data[0], bridge_data[1]
-                # Use the stored per-bridge width; fall back to current settings if missing
-                w_px = bridge_data[2] if len(bridge_data) > 2 else bridge_px
-                rect = _bridge_rect(pt1, pt2, w_px)
-                if rect:
-                    active_paths.append(rect)
+            # 2. Splice manual bridges into their source paths.
+            # Unlike the old approach (appending a separate rectangle), this uses
+            # the same algorithm as the auto-bridge: it mutates the path that pt1
+            # lies on to detour out to pt2 and back, opening a physical tab gap.
+            if self._manual_bridges:
+                from bridgeit.pipeline.bridge import apply_manual_bridges
+                active_paths = apply_manual_bridges(active_paths, self._manual_bridges)
 
             # Wrap the modified paths back into a BridgeResult so export_svg can use it
             modified_br = BridgeResult(

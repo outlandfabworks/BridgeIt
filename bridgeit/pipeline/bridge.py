@@ -242,6 +242,66 @@ def _find_nearest_segment(path: Path2D, pt: Tuple[float, float]) -> int:
     return best_idx
 
 
+def apply_manual_bridges(
+    paths: List[Path2D],
+    manual_bridges: list,
+) -> List[Path2D]:
+    """Splice user-drawn manual bridges into their source paths.
+
+    The old approach appended each manual bridge as a separate closed rectangle
+    path.  That doesn't create physical tabs — the cutter would cut the original
+    path completely AND then cut the rectangle, leaving the island free to fall.
+
+    This function uses the same technique as the auto-bridge algorithm:
+    it finds which path pt1 lies on and MUTATES that path to include a detour
+    out to pt2 and back, opening a gap of bridge_width at the attachment point.
+    The result is one continuous cut that physically holds the two pieces.
+
+    Args:
+        paths:          The active path list to modify (already filtered for exclusions).
+        manual_bridges: Each entry is [pt1, pt2, width_px] from the canvas.
+
+    Returns:
+        A new list of paths with the bridge geometry spliced in.
+    """
+    # Work on deep copies so we don't mutate the originals that the canvas holds
+    result = [list(p) for p in paths]
+
+    for bridge_data in manual_bridges:
+        if len(bridge_data) < 2:
+            continue
+        pt1: Tuple[float, float] = bridge_data[0]
+        pt2: Tuple[float, float] = bridge_data[1]
+        width_px: float = bridge_data[2] if len(bridge_data) > 2 else mm_to_px(DEFAULT_BRIDGE_WIDTH_MM)
+
+        # Find which path pt1 is on — we splice the bridge into that path.
+        # This mirrors the auto-bridge convention: the "island" side is modified,
+        # the "target" side is left intact (its cut line is where the tab tip rests).
+        path_idx = _find_nearest_path(result, pt1)
+        if path_idx is None:
+            continue
+
+        _insert_bridge_into_path(result[path_idx], pt1, pt2, width_px)
+
+    return result
+
+
+def _find_nearest_path(paths: List[Path2D], pt: Tuple[float, float]) -> Optional[int]:
+    """Return the index of the path whose nearest vertex is closest to pt."""
+    best_dist = math.inf
+    best_idx: Optional[int] = None
+    px, py = pt
+
+    for i, path in enumerate(paths):
+        for x, y in path:
+            d = math.hypot(x - px, y - py)
+            if d < best_dist:
+                best_dist = d
+                best_idx = i
+
+    return best_idx
+
+
 # ---------------------------------------------------------------------------
 # Standalone validation
 # ---------------------------------------------------------------------------
