@@ -60,17 +60,17 @@ THEMES: dict[str, dict[str, str]] = {
     },
 
     "light": {
-        "window_bg":   "#f6f5f4",   # Ubuntu Yaru light grey
-        "toolbar_bg":  "#e6e4e2",
-        "sidebar_bg":  "#ede9e6",
-        "surface":     "#ffffff",
-        "surface_2":   "#f0eeec",
+        "window_bg":   "#f2f0ef",   # warm off-white (less stark than pure grey)
+        "toolbar_bg":  "#e8e5e3",   # slightly darker for clear header separation
+        "sidebar_bg":  "#f2f0ef",   # matches window so sidebar feels flush
+        "surface":     "#ffffff",   # pure white cards and inputs
+        "surface_2":   "#e8e5e3",   # hover state
 
-        "border":      "#cbc7c4",
-        "border_faint":"#e0dedd",
+        "border":      "#c8c4c1",
+        "border_faint":"#dedad8",
 
-        "text":        "#3d3d3d",
-        "text_muted":  "#8b8685",
+        "text":        "#1a1a1a",   # near-black for crisp readability
+        "text_muted":  "#78716c",   # warm grey muted text
 
         "accent":      "#E95420",
         "accent_hover":"#f5703a",
@@ -79,7 +79,7 @@ THEMES: dict[str, dict[str, str]] = {
         "success":     "#26a269",
         "error":       "#c01c28",
 
-        "canvas_bg":   "#dfdbd8",
+        "canvas_bg":   "#d8d4d0",   # slightly darker canvas so content pops
 
         "splitter":    "#cbc7c4",
 

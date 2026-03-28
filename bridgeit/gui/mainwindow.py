@@ -564,6 +564,9 @@ class MainWindow(QMainWindow):
                 background: transparent;
                 color: {t["text"]};
             }}
+            QLabel[muted="true"] {{
+                color: {t["text_muted"]};
+            }}
             QProgressBar {{
                 background: {t["surface"]};
                 border-radius: 2px;

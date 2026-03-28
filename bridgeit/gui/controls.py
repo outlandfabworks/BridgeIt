@@ -212,15 +212,23 @@ class ControlsPanel(QWidget):
             self._bridge_lbl.setStyleSheet(f"color: {t['text']}; font-size: 12px;")
 
     def apply_theme(self, t: dict) -> None:
-        """Re-style all controls to match the given theme dict."""
+        """Re-style all controls to match the given theme dict.
+
+        Most widget colours are now driven by the global app QSS (set in
+        MainWindow._apply_theme), so only widgets with unavoidable inline
+        stylesheets need explicit updates here.
+        """
         card_style = (
             f"QWidget#card {{ background: {t['surface']}; "
             f"border: 1px solid {t['border_faint']}; border-radius: 10px; }}"
         )
-        if hasattr(self, "_conv_card"):
-            self._conv_card.setStyleSheet(card_style)
-        if hasattr(self, "_info_card"):
-            self._info_card.setStyleSheet(card_style)
+        sep_style = f"background: {t['border_faint']}; border: none;"
+        for card in [self._conv_card, self._info_card]:
+            if card:
+                card.setStyleSheet(card_style)
+                # Update the thin separator line stored on the card widget
+                if hasattr(card, "_sep"):
+                    card._sep.setStyleSheet(sep_style)
 
     def reset_info(self) -> None:
         # Clear all info card values back to "—" (e.g. when a new image is opened)
@@ -297,16 +305,20 @@ class ControlsPanel(QWidget):
 
         # Section title sits inside the card at the top
         title_lbl = QLabel(title)
+        title_lbl.setProperty("muted", True)
+        # No inline color — global QSS QLabel[muted="true"] handles it
         title_lbl.setStyleSheet(
-            f"color: {t['text_muted']}; font-size: 9px; font-weight: 700; "
-            f"letter-spacing: 1.8px; background: transparent; border: none;"
+            "font-size: 9px; font-weight: 700; letter-spacing: 1.8px; "
+            "background: transparent; border: none;"
         )
         outer.addWidget(title_lbl)
 
-        # Thin accent-coloured separator line under the title
+        # Thin separator line — colour must come from inline style (no selector available)
+        # We store it on the card so apply_theme() can update it on theme change.
         sep = QWidget()
         sep.setFixedHeight(1)
         sep.setStyleSheet(f"background: {t['border_faint']}; border: none;")
+        card._sep = sep   # store ref for apply_theme() re-colouring
         outer.addWidget(sep)
         outer.addSpacing(2)
 
@@ -343,40 +355,34 @@ class ControlsPanel(QWidget):
         minimum: float, maximum: float, step: float, decimals: int,
         tooltip: str = "",
     ):
-        # Builds a horizontal row: [Label] [spacer] [SpinBox] [unit text]
-        # Returns the spinbox and row layout as a tuple so the caller can
-        # add the row to a parent layout and also keep a reference to the spinbox.
-        t = current_theme()
         row = QHBoxLayout()
         lbl = QLabel(label)
-        lbl.setStyleSheet(f"color: {t['text']}; font-size: 12px;")
+        # No inline color — global app QSS supplies QLabel { color: t['text'] }
+        lbl.setStyleSheet("font-size: 12px;")
         lbl.setToolTip(tooltip)
 
-        # QDoubleSpinBox shows floating-point numbers with Up/Down arrow buttons
         spin = QDoubleSpinBox()
         spin.setRange(minimum, maximum)
-        spin.setSingleStep(step)       # how much one arrow-click changes the value
+        spin.setSingleStep(step)
         spin.setDecimals(decimals)
         spin.setValue(value)
         spin.setFixedWidth(72)
         spin.setToolTip(tooltip)
-        spin.setStyleSheet(
-            f"QDoubleSpinBox {{ background: {t['surface']}; color: {t['text']}; "
-            f"border: 1px solid {t['border']}; border-radius: 6px; padding: 2px 4px; }}"
-        )
+        # No inline stylesheet — global app QSS handles QDoubleSpinBox colours.
+        # Inline styles bake in the build-time theme and can't be overridden by
+        # the app stylesheet when the user cycles themes.
 
-        # Small muted label showing the unit (e.g. "mm")
         unit_lbl = QLabel(unit)
-        unit_lbl.setStyleSheet(f"color: {t['text_muted']}; font-size: 11px;")
+        # "muted" property lets the global QSS target these with
+        # QLabel[muted="true"] { color: t['text_muted']; }
+        unit_lbl.setProperty("muted", True)
+        unit_lbl.setStyleSheet("font-size: 11px;")
 
         row.addWidget(lbl)
         row.addStretch()
         row.addWidget(spin)
         if unit:
             row.addWidget(unit_lbl)
-
-        # Return the spinbox AND the label — the label ref is needed by
-        # set_bridge_editing_mode to change the "Bridge Width" text
         return spin, row, lbl
 
     @staticmethod
@@ -385,28 +391,22 @@ class ControlsPanel(QWidget):
         minimum: int, maximum: int, step: int,
         tooltip: str = "",
     ):
-        # Same pattern as _labeled_double_spin but for integer-only values.
-        # Does NOT return the label reference (callers don't need to change it).
-        t = current_theme()
         row = QHBoxLayout()
         lbl = QLabel(label)
-        lbl.setStyleSheet(f"color: {t['text']}; font-size: 12px;")
+        lbl.setStyleSheet("font-size: 12px;")
         lbl.setToolTip(tooltip)
 
-        # QSpinBox is for integers only; use QDoubleSpinBox for decimals
         spin = QSpinBox()
         spin.setRange(minimum, maximum)
         spin.setSingleStep(step)
         spin.setValue(value)
         spin.setFixedWidth(72)
         spin.setToolTip(tooltip)
-        spin.setStyleSheet(
-            f"QSpinBox {{ background: {t['surface']}; color: {t['text']}; "
-            f"border: 1px solid {t['border']}; border-radius: 6px; padding: 2px 4px; }}"
-        )
+        # No inline stylesheet — global app QSS handles QSpinBox colours.
 
         unit_lbl = QLabel(unit)
-        unit_lbl.setStyleSheet(f"color: {t['text_muted']}; font-size: 11px;")
+        unit_lbl.setProperty("muted", True)
+        unit_lbl.setStyleSheet("font-size: 11px;")
 
         row.addWidget(lbl)
         row.addStretch()
@@ -417,50 +417,22 @@ class ControlsPanel(QWidget):
 
     @staticmethod
     def _make_slider(minimum: int, maximum: int, value: int) -> QSlider:
-        # QSlider is a horizontal draggable track.
-        # Qt.Orientation.Horizontal means the track goes left-to-right.
-        t = current_theme()
         slider = QSlider(Qt.Orientation.Horizontal)
         slider.setRange(minimum, maximum)
         slider.setValue(value)
-
-        # The stylesheet controls the appearance of the track (groove) and
-        # the draggable circle (handle). sub-page is the filled portion to
-        # the left of the handle (shows progress).
-        slider.setStyleSheet(
-            f"""
-            QSlider::groove:horizontal {{
-                height: 4px;
-                background: {t['border']};
-                border-radius: 2px;
-            }}
-            QSlider::handle:horizontal {{
-                background: {t['accent']};
-                border: none;
-                width: 14px;
-                height: 14px;
-                margin: -5px 0;
-                border-radius: 7px;
-            }}
-            QSlider::sub-page:horizontal {{
-                background: {t['accent']};
-                border-radius: 2px;
-            }}
-            """
-        )
+        # No inline stylesheet — global app QSS handles QSlider colours.
+        # This means sliders always reflect the current theme when it cycles.
         return slider
 
     @staticmethod
     def _info_row(label: str, value: str):
-        # Creates a key-value row: [muted label] [spacer] [bold value label]
-        # Returns a tuple of (layout, value_label) so the caller can later
-        # call value_label.setText(new_value) to update the displayed number.
-        t = current_theme()
         row = QHBoxLayout()
         lbl = QLabel(label)
-        lbl.setStyleSheet(f"color: {t['text_muted']}; font-size: 11px;")
+        lbl.setProperty("muted", True)
+        lbl.setStyleSheet("font-size: 11px;")
         val = QLabel(value)
-        val.setStyleSheet(f"color: {t['text']}; font-size: 11px; font-weight: 600;")
+        # Keep font-weight inline (not a colour, safe to bake in)
+        val.setStyleSheet("font-size: 11px; font-weight: 600;")
         row.addWidget(lbl)
         row.addStretch()
         row.addWidget(val)
