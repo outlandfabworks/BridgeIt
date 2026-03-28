@@ -72,51 +72,27 @@ class ControlsPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
-        # setObjectName lets us target this specific widget in stylesheets
         self.setObjectName("ControlsPanel")
         self.setMinimumWidth(260)
         self.setMaximumWidth(320)
 
-        # Root vertical layout — everything stacks top to bottom
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # ── Panel header ──────────────────────────────────────────────────
-        # A thin strip at the top labelled "Settings"
-        t = current_theme()
-        self._header = QWidget()
-        self._header.setObjectName("PanelHeader")
-        self._header.setFixedHeight(44)
-        self._header.setStyleSheet(
-            f"background: {t['toolbar_bg']}; border-bottom: 1px solid {t['border_faint']};"
-        )
-        hlay = QHBoxLayout(self._header)
-        hlay.setContentsMargins(16, 0, 16, 0)
-        self._hdr_lbl = QLabel("Settings")
-        self._hdr_lbl.setStyleSheet(
-            f"color: {t['text']}; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;"
-        )
-        hlay.addWidget(self._hdr_lbl)
-        hlay.addStretch()   # push the label to the left
-        root.addWidget(self._header)
-
-        # ── Scrollable content ────────────────────────────────────────────
-        # The main body of the panel holding all the settings controls
+        # ── Scrollable content area ───────────────────────────────────────
         content = QWidget()
         content.setStyleSheet("background: transparent;")
         inner = QVBoxLayout(content)
-        inner.setContentsMargins(16, 18, 16, 18)
-        inner.setSpacing(6)
+        inner.setContentsMargins(14, 16, 14, 16)
+        inner.setSpacing(12)
 
-        # Section heading — "CONVERSION SETTINGS"
-        inner.addWidget(self._section_label("CONVERSION SETTINGS"))
-        inner.addSpacing(8)
+        # ── Card 1: Conversion Settings ───────────────────────────────────
+        # Each section lives in a rounded card so it reads as a visual unit.
+        conv_card, conv_inner = self._make_card("CONVERSION SETTINGS")
+        self._conv_card = conv_card   # kept for apply_theme()
 
-        # ── Bridge width control ──────────────────────────────────────────
-        # A spinbox (numeric input) paired with a slider — they stay in sync.
-        # self._bridge_lbl is returned so we can change its text later when
-        # the user is editing a selected bridge (see set_bridge_editing_mode).
+        # Bridge width: spinbox + slider pair
         self._bridge_spin, bridge_row, self._bridge_lbl = self._labeled_double_spin(
             label="Bridge Width",
             unit="mm",
@@ -127,15 +103,12 @@ class ControlsPanel(QWidget):
             decimals=2,
             tooltip="Width of bridges connecting floating islands to the main shape.\nSmaller = less visible but weaker.",
         )
-        inner.addLayout(bridge_row)
-
-        # Slider value is stored as integer 1–50 representing 0.1–5.0 mm (×10)
+        conv_inner.addLayout(bridge_row)
         self._bridge_slider = self._make_slider(1, 50, int(DEFAULT_BRIDGE_WIDTH_MM * 10))
-        inner.addWidget(self._bridge_slider)
-        inner.addSpacing(14)
+        conv_inner.addWidget(self._bridge_slider)
+        conv_inner.addSpacing(10)
 
-        # ── Contour smoothing control ─────────────────────────────────────
-        # Higher smoothing = fewer points on the traced path = smoother but less detailed
+        # Contour smoothing: spinbox + slider pair
         self._smooth_spin, smooth_row, _ = self._labeled_double_spin(
             label="Contour Smoothing",
             unit="",
@@ -144,17 +117,14 @@ class ControlsPanel(QWidget):
             maximum=10.0,
             step=0.5,
             decimals=1,
-            tooltip="Douglas-Peucker simplification factor.\n0 = no simplification (most detail).\nHigher = smoother, fewer points.",
+            tooltip="Douglas-Peucker simplification factor.\n0 = no simplification.\nHigher = smoother, fewer points.",
         )
-        inner.addLayout(smooth_row)
-
-        # Slider is 0–100 representing 0.0–10.0 (×10 to keep integer precision)
+        conv_inner.addLayout(smooth_row)
         self._smooth_slider = self._make_slider(0, 100, int(DEFAULT_CONTOUR_SMOOTHING * 10))
-        inner.addWidget(self._smooth_slider)
-        inner.addSpacing(14)
+        conv_inner.addWidget(self._smooth_slider)
+        conv_inner.addSpacing(10)
 
-        # ── Min contour area control ──────────────────────────────────────
-        # Any detected shape smaller than this area (in px²) is discarded as noise
+        # Min contour area: spinbox + slider pair
         self._area_spin, area_row = self._labeled_int_spin(
             label="Min Area Filter",
             unit="px²",
@@ -164,51 +134,29 @@ class ControlsPanel(QWidget):
             step=50,
             tooltip="Contours smaller than this area are ignored as noise.\nIncrease if you see speckles in the output.",
         )
-        inner.addLayout(area_row)
-
-        # Slider range matches the spinbox range directly (no scaling needed)
+        conv_inner.addLayout(area_row)
         self._area_slider = self._make_slider(0, 5000, int(DEFAULT_MIN_CONTOUR_AREA))
-        inner.addWidget(self._area_slider)
+        conv_inner.addWidget(self._area_slider)
 
-        inner.addSpacing(24)
+        inner.addWidget(conv_card)
 
-        # ── Analysis info section ─────────────────────────────────────────
-        # Read-only statistics updated after each pipeline run
-        inner.addWidget(self._section_label("ANALYSIS INFO"))
-        inner.addSpacing(10)
+        # ── Card 2: Analysis Info ─────────────────────────────────────────
+        info_card, info_inner = self._make_card("ANALYSIS INFO")
+        self._info_card = info_card   # kept for apply_theme()
 
-        # A dark card widget to visually group the stats rows
-        t = current_theme()
-        info_card = QWidget()
-        self._info_card = info_card   # saved for theme re-application
-        info_card.setStyleSheet(
-            f"background: {t['surface']};"
-            f"border: 1px solid {t['border_faint']};"
-            "border-radius: 8px;"
-        )
-        card_layout = QVBoxLayout(info_card)
-        card_layout.setContentsMargins(12, 10, 12, 10)
-        card_layout.setSpacing(8)
-
-        # _info_row returns a tuple of (layout, value_label) so we can update
-        # the value label later without rebuilding the whole row
         self._info_islands = self._info_row("Islands detected", "—")
         self._info_bridges = self._info_row("Bridges added", "—")
         self._info_paths   = self._info_row("Total paths", "—")
         self._info_time    = self._info_row("Processing time", "—")
 
-        card_layout.addLayout(self._info_islands[0])
-        card_layout.addLayout(self._info_bridges[0])
-        card_layout.addLayout(self._info_paths[0])
-        card_layout.addLayout(self._info_time[0])
+        for row_layout, _ in [self._info_islands, self._info_bridges,
+                               self._info_paths, self._info_time]:
+            info_inner.addLayout(row_layout)
+
         inner.addWidget(info_card)
 
-        # Push everything up — the spacer fills any leftover vertical space
         inner.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
         root.addWidget(content)
-
-        # Another spacer at the root level ensures the panel doesn't grow taller
-        # than its content if the window is very tall
         root.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
 
     # ------------------------------------------------------------------
@@ -264,21 +212,15 @@ class ControlsPanel(QWidget):
             self._bridge_lbl.setStyleSheet(f"color: {t['text']}; font-size: 12px;")
 
     def apply_theme(self, t: dict) -> None:
-        """Re-style all controls to match the given theme dict.
-
-        Called by MainWindow._apply_theme() after the user cycles to a new theme.
-        We only need to re-style widgets that have inline stylesheets — the global
-        app stylesheet (set by MainWindow) handles generic types like QSlider, QSpinBox.
-        """
-        self._header.setStyleSheet(
-            f"background: {t['toolbar_bg']}; border-bottom: 1px solid {t['border_faint']};"
+        """Re-style all controls to match the given theme dict."""
+        card_style = (
+            f"QWidget#card {{ background: {t['surface']}; "
+            f"border: 1px solid {t['border_faint']}; border-radius: 10px; }}"
         )
-        self._hdr_lbl.setStyleSheet(
-            f"color: {t['text']}; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;"
-        )
-        self._info_card.setStyleSheet(
-            f"background: {t['surface']}; border: 1px solid {t['border_faint']}; border-radius: 8px;"
-        )
+        if hasattr(self, "_conv_card"):
+            self._conv_card.setStyleSheet(card_style)
+        if hasattr(self, "_info_card"):
+            self._info_card.setStyleSheet(card_style)
 
     def reset_info(self) -> None:
         # Clear all info card values back to "—" (e.g. when a new image is opened)
@@ -329,6 +271,46 @@ class ControlsPanel(QWidget):
     # ------------------------------------------------------------------
     # Widget helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _make_card(title: str):
+        """Create a rounded, bordered card widget for grouping related controls.
+
+        Returns (card_widget, inner_layout) so the caller can add controls to
+        the inner layout while the card widget gets added to the parent layout.
+        The card has a visible title label at the top as the section heading.
+        """
+        t = current_theme()
+
+        card = QWidget()
+        card.setStyleSheet(
+            f"QWidget#card {{ "
+            f"background: {t['surface']}; "
+            f"border: 1px solid {t['border_faint']}; "
+            f"border-radius: 10px; }}"
+        )
+        card.setObjectName("card")
+
+        outer = QVBoxLayout(card)
+        outer.setContentsMargins(14, 12, 14, 14)
+        outer.setSpacing(8)
+
+        # Section title sits inside the card at the top
+        title_lbl = QLabel(title)
+        title_lbl.setStyleSheet(
+            f"color: {t['text_muted']}; font-size: 9px; font-weight: 700; "
+            f"letter-spacing: 1.8px; background: transparent; border: none;"
+        )
+        outer.addWidget(title_lbl)
+
+        # Thin accent-coloured separator line under the title
+        sep = QWidget()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet(f"background: {t['border_faint']}; border: none;")
+        outer.addWidget(sep)
+        outer.addSpacing(2)
+
+        return card, outer
 
     @staticmethod
     def _section_label(text: str) -> QWidget:

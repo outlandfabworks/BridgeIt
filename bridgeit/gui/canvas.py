@@ -530,6 +530,15 @@ class InteractiveCanvas(QGraphicsView):
     def staged_count(self) -> int:
         return len(self._staged_data)
 
+    def update_theme(self) -> None:
+        """Re-apply the active theme colour to the canvas background.
+
+        Called by MainWindow._apply_theme() after the user cycles themes so
+        the canvas background matches the new palette.
+        """
+        self.setBackgroundBrush(QBrush(_canvas_bg()))
+        self._scene.update()
+
     def load(
         self,
         paths: List[Path2D],

@@ -200,9 +200,9 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Build and attach the toolbar (it docks to the top automatically)
-        toolbar = self._build_toolbar()
-        self.addToolBar(toolbar)
+        # Build a custom header bar — replaces QToolBar for full layout control
+        header = self._build_header()
+        main_layout.addWidget(header)
 
         # QSplitter lets the user drag the divider to resize the panels
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -250,106 +250,123 @@ class MainWindow(QMainWindow):
         self._status_bar.addWidget(self._status_label)
         self._status_bar.addPermanentWidget(self._progress_bar)
 
-    def _build_toolbar(self) -> QToolBar:
-        t = current_theme()
-        toolbar = QToolBar()
-        toolbar.setMovable(False)
-        toolbar.setFloatable(False)
-        toolbar.setIconSize(__import__("PyQt6.QtCore", fromlist=["QSize"]).QSize(20, 20))
-        self._toolbar_ref = toolbar   # saved so _apply_theme can re-style it
+    def _build_header(self) -> QWidget:
+        """Build a custom integrated header bar — taller and more structured than QToolBar.
 
-        # ── Branding ──────────────────────────────────────────────────────
+        Three sections in a horizontal layout:
+          LEFT  — logo + app name + version
+          CENTER — tool buttons grouped with separators
+          RIGHT  — theme toggle + shortcuts
+        """
+        t = current_theme()
+        header = QWidget()
+        header.setFixedHeight(56)
+        header.setObjectName("AppHeader")
+        header.setStyleSheet(
+            f"QWidget#AppHeader {{ background: {t['toolbar_bg']}; "
+            f"border-bottom: 2px solid {t['accent']}; }}"
+        )
+        self._header_ref = header
+
+        hlay = QHBoxLayout(header)
+        hlay.setContentsMargins(16, 0, 12, 0)
+        hlay.setSpacing(0)
+
+        # ── LEFT: branding ────────────────────────────────────────────────
         self._logo_lbl = QLabel("◆")
         self._logo_lbl.setStyleSheet(
-            f"color: {t['accent']}; font-size: 14px; padding: 0 4px 0 4px;"
+            f"color: {t['accent']}; font-size: 18px; padding-right: 6px;"
         )
-        toolbar.addWidget(self._logo_lbl)
+        hlay.addWidget(self._logo_lbl)
 
         name_lbl = QLabel(APP_NAME)
         name_lbl.setStyleSheet(
-            f"color: {t['text']}; font-size: 14px; font-weight: 700; letter-spacing: 0.5px;"
+            f"color: {t['text']}; font-size: 15px; font-weight: 700; letter-spacing: 0.5px;"
         )
-        toolbar.addWidget(name_lbl)
+        hlay.addWidget(name_lbl)
 
-        ver_lbl = QLabel(f"v{APP_VERSION}")
-        ver_lbl.setStyleSheet(
-            f"color: {t['text_muted']}; font-size: 10px; padding: 3px 14px 0 5px;"
-        )
-        toolbar.addWidget(ver_lbl)
+        ver_lbl = QLabel(f"  v{APP_VERSION}")
+        ver_lbl.setStyleSheet(f"color: {t['text_muted']}; font-size: 10px; padding-top: 3px;")
+        hlay.addWidget(ver_lbl)
 
-        toolbar.addWidget(self._toolbar_sep())
+        hlay.addSpacing(20)
+        hlay.addWidget(self._header_sep())
 
-        # ── File actions ──────────────────────────────────────────────────
-        # Each button shows a Unicode icon; the full name appears as a tooltip on hover.
-        self._btn_open = self._toolbar_icon_btn("⊡", "Open Image  (Ctrl+O)")
+        # ── CENTER: tool buttons ──────────────────────────────────────────
+        # New icons — chosen for visual distinctiveness across shape and fill:
+        #   ◫ = vertical rectangle (document/file)     → Open
+        #   ⬆ = solid up arrow (send out)              → Export SVG
+        #   ◉ = bullseye (viewfinder)                  → View Original
+        #   △ = triangle outline (shape/geometry)      → View Cut Paths
+        #   ✕ = bold X (remove)                        → Delete
+        #   ⊞ = square-plus (add)                      → Add Bridge
+        hlay.addSpacing(8)
+
+        self._btn_open = self._header_btn("◫", "Open Image  (Ctrl+O)")
         self._btn_open.clicked.connect(self._on_open_clicked)
-        toolbar.addWidget(self._btn_open)
+        hlay.addWidget(self._btn_open)
 
-        self._btn_export = self._toolbar_icon_btn("⬇", "Export SVG", primary=True)
+        self._btn_export = self._header_btn("⬆", "Export SVG", primary=True)
         self._btn_export.setEnabled(False)
         self._btn_export.clicked.connect(self._on_export_clicked)
-        toolbar.addWidget(self._btn_export)
+        hlay.addWidget(self._btn_export)
 
-        toolbar.addWidget(self._toolbar_sep())
+        hlay.addSpacing(4)
+        hlay.addWidget(self._header_sep())
+        hlay.addSpacing(4)
 
-        # ── View toggles ──────────────────────────────────────────────────
-        self._btn_view_image = self._toolbar_icon_btn("⊙", "Original  (background-removed)")
+        self._btn_view_image = self._header_btn("◉", "Original  (background-removed image)")
         self._btn_view_image.setEnabled(False)
         self._btn_view_image.clicked.connect(self._show_original)
-        toolbar.addWidget(self._btn_view_image)
+        hlay.addWidget(self._btn_view_image)
 
-        self._btn_view_svg = self._toolbar_icon_btn("⬡", "Cut Paths  (interactive canvas)")
+        self._btn_view_svg = self._header_btn("△", "Cut Paths  (interactive canvas)")
         self._btn_view_svg.setEnabled(False)
         self._btn_view_svg.clicked.connect(self._show_svg)
-        toolbar.addWidget(self._btn_view_svg)
+        hlay.addWidget(self._btn_view_svg)
 
-        toolbar.addWidget(self._toolbar_sep())
+        hlay.addSpacing(4)
+        hlay.addWidget(self._header_sep())
+        hlay.addSpacing(4)
 
-        # ── Edit tools ────────────────────────────────────────────────────
-        self._btn_delete = self._toolbar_icon_btn("⊗", "Delete selected  (Delete key)")
+        self._btn_delete = self._header_btn("✕", "Delete selected  (Delete key)")
         self._btn_delete.setEnabled(False)
         self._btn_delete.clicked.connect(self._on_delete_selected)
-        toolbar.addWidget(self._btn_delete)
+        hlay.addWidget(self._btn_delete)
 
-        self._btn_add_bridge = self._toolbar_icon_btn("⊕", "Add Bridge  (draw a bridge between paths)")
+        self._btn_add_bridge = self._header_btn("⊞", "Add Bridge  (draw a bridge between paths)")
         self._btn_add_bridge.setEnabled(False)
         self._btn_add_bridge.setCheckable(True)
         self._btn_add_bridge.clicked.connect(self._on_toggle_bridge_mode)
-        toolbar.addWidget(self._btn_add_bridge)
+        hlay.addWidget(self._btn_add_bridge)
 
-        # ── Spacer ────────────────────────────────────────────────────────
-        spacer = QWidget()
-        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        toolbar.addWidget(spacer)
+        # ── RIGHT: meta controls ──────────────────────────────────────────
+        hlay.addStretch()
 
-        # ── Right-side: theme toggle + help ──────────────────────────────
-        self._btn_theme = self._toolbar_icon_btn("◑", f"Theme: {theme_label()}  (click to cycle)")
+        self._btn_theme = self._header_btn("◑", f"Theme: {theme_label()}  (click to cycle)")
         self._btn_theme.clicked.connect(self._on_theme_toggle)
-        toolbar.addWidget(self._btn_theme)
+        hlay.addWidget(self._btn_theme)
 
-        btn_help = self._toolbar_icon_btn("?", "Keyboard shortcuts")
+        btn_help = self._header_btn("⌨", "Keyboard shortcuts")
         btn_help.clicked.connect(self._show_shortcuts)
-        toolbar.addWidget(btn_help)
+        hlay.addWidget(btn_help)
 
-        return toolbar
+        return header
 
-    def _toolbar_sep(self) -> QWidget:
-        """Thin vertical divider between toolbar groups."""
+    def _header_sep(self) -> QWidget:
+        """Thin vertical separator between button groups in the header."""
         t = current_theme()
-        outer = QWidget()
-        outer.setFixedWidth(17)
-        inner = QWidget(outer)
-        inner.setFixedSize(1, 22)
-        inner.setStyleSheet(f"background: {t['border_faint']};")
-        inner.move(8, 5)
-        return outer
+        sep = QWidget()
+        sep.setFixedSize(1, 28)
+        sep.setStyleSheet(f"background: {t['border_faint']};")
+        return sep
 
     @staticmethod
-    def _toolbar_icon_btn(icon: str, tooltip: str, primary: bool = False) -> QPushButton:
-        """Create a compact icon-only toolbar button with a hover tooltip.
+    def _header_btn(icon: str, tooltip: str, primary: bool = False) -> QPushButton:
+        """Create a compact icon-only header button with a hover tooltip.
 
         Icon is a Unicode character rendered large; the label text is shown
-        only in the tooltip, keeping the toolbar compact and uncluttered.
+        only in the tooltip, keeping the header compact and uncluttered.
         """
         t = current_theme()
         btn = QPushButton(icon)
@@ -458,11 +475,9 @@ class MainWindow(QMainWindow):
                 color: {t["text"]};
                 font-family: "Ubuntu", "Segoe UI", sans-serif;
             }}
-            QToolBar {{
+            QWidget#AppHeader {{
                 background: {t["toolbar_bg"]};
-                border-bottom: 1px solid {t["border_faint"]};
-                padding: 4px 16px;
-                spacing: 2px;
+                border-bottom: 2px solid {t["accent"]};
             }}
             QStatusBar {{
                 background: {t["statusbar_bg"]};
@@ -565,11 +580,10 @@ class MainWindow(QMainWindow):
         # ── Per-widget re-styling for items with inline overrides ─────────
         # These widgets set their own inline stylesheets during _build_toolbar /
         # _build_ui, so we need to refresh them after a theme change.
-        if hasattr(self, "_toolbar_ref"):
-            self._toolbar_ref.setStyleSheet(
-                f"QToolBar {{ background: {t['toolbar_bg']}; "
-                f"border-bottom: 1px solid {t['border_faint']}; "
-                f"padding: 4px 16px; spacing: 2px; }}"
+        if hasattr(self, "_header_ref"):
+            self._header_ref.setStyleSheet(
+                f"QWidget#AppHeader {{ background: {t['toolbar_bg']}; "
+                f"border-bottom: 2px solid {t['accent']}; }}"
             )
         if hasattr(self, "_status_bar"):
             self._status_bar.setStyleSheet(
@@ -590,6 +604,7 @@ class MainWindow(QMainWindow):
             self._controls.apply_theme(t)
         if hasattr(self, "_preview"):
             self._preview.setStyleSheet(f"background: {t['canvas_bg']};")
+            self._preview.canvas.update_theme()
         # Re-style the primary Export SVG button
         if hasattr(self, "_btn_export"):
             self._style_primary_button(self._btn_export)
