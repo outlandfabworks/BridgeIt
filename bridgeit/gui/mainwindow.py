@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from PIL import Image
-from PyQt6.QtCore import QObject, QThread, QTimer, Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QObject, QThread, QTimer, Qt, QSize, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QAction, QColor, QFont, QPalette
 from PyQt6.QtWidgets import (
     QApplication,
@@ -172,6 +172,10 @@ class MainWindow(QMainWindow):
         self._settings_timer.setInterval(250)       # 250ms delay
         self._settings_timer.timeout.connect(self._on_settings_debounced)
 
+        # Tracks every icon button so _apply_theme() can re-render their icons
+        # when the user cycles themes.  Each entry is (button, icon_name, is_primary).
+        self._icon_btns: list[tuple] = []
+
         self._build_ui()
         self._apply_theme()
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
@@ -302,11 +306,11 @@ class MainWindow(QMainWindow):
         #   ⊞ = square-plus (add)                      → Add Bridge
         hlay.addSpacing(8)
 
-        self._btn_open = self._header_btn("◫", "Open Image  (Ctrl+O)")
+        self._btn_open = self._header_btn("open", "Open Image  (Ctrl+O)")
         self._btn_open.clicked.connect(self._on_open_clicked)
         hlay.addWidget(self._btn_open)
 
-        self._btn_export = self._header_btn("⬆", "Export SVG", primary=True)
+        self._btn_export = self._header_btn("export", "Export SVG", primary=True)
         self._btn_export.setEnabled(False)
         self._btn_export.clicked.connect(self._on_export_clicked)
         hlay.addWidget(self._btn_export)
@@ -315,12 +319,12 @@ class MainWindow(QMainWindow):
         hlay.addWidget(self._header_sep())
         hlay.addSpacing(4)
 
-        self._btn_view_image = self._header_btn("◉", "Original  (background-removed image)")
+        self._btn_view_image = self._header_btn("original", "Original  (background-removed image)")
         self._btn_view_image.setEnabled(False)
         self._btn_view_image.clicked.connect(self._show_original)
         hlay.addWidget(self._btn_view_image)
 
-        self._btn_view_svg = self._header_btn("△", "Cut Paths  (interactive canvas)")
+        self._btn_view_svg = self._header_btn("paths", "Cut Paths  (interactive canvas)")
         self._btn_view_svg.setEnabled(False)
         self._btn_view_svg.clicked.connect(self._show_svg)
         hlay.addWidget(self._btn_view_svg)
@@ -329,12 +333,12 @@ class MainWindow(QMainWindow):
         hlay.addWidget(self._header_sep())
         hlay.addSpacing(4)
 
-        self._btn_delete = self._header_btn("✕", "Delete selected  (Delete key)")
+        self._btn_delete = self._header_btn("delete", "Delete selected  (Delete key)")
         self._btn_delete.setEnabled(False)
         self._btn_delete.clicked.connect(self._on_delete_selected)
         hlay.addWidget(self._btn_delete)
 
-        self._btn_add_bridge = self._header_btn("⊞", "Add Bridge  (draw a bridge between paths)")
+        self._btn_add_bridge = self._header_btn("bridge", "Add Bridge  (draw a bridge between paths)")
         self._btn_add_bridge.setEnabled(False)
         self._btn_add_bridge.setCheckable(True)
         self._btn_add_bridge.clicked.connect(self._on_toggle_bridge_mode)
@@ -343,11 +347,11 @@ class MainWindow(QMainWindow):
         # ── RIGHT: meta controls ──────────────────────────────────────────
         hlay.addStretch()
 
-        self._btn_theme = self._header_btn("◑", f"Theme: {theme_label()}  (click to cycle)")
+        self._btn_theme = self._header_btn("theme", f"Theme: {theme_label()}  (click to cycle)")
         self._btn_theme.clicked.connect(self._on_theme_toggle)
         hlay.addWidget(self._btn_theme)
 
-        btn_help = self._header_btn("⌨", "Keyboard shortcuts")
+        btn_help = self._header_btn("shortcuts", "Keyboard shortcuts")
         btn_help.clicked.connect(self._show_shortcuts)
         hlay.addWidget(btn_help)
 
@@ -361,30 +365,32 @@ class MainWindow(QMainWindow):
         sep.setStyleSheet(f"background: {t['border_faint']};")
         return sep
 
-    @staticmethod
-    def _header_btn(icon: str, tooltip: str, primary: bool = False) -> QPushButton:
-        """Create a compact icon-only header button with a hover tooltip.
+    def _header_btn(self, icon_name: str, tooltip: str, primary: bool = False) -> QPushButton:
+        """Create a compact SVG-icon header button with a hover tooltip.
 
-        Icon is a Unicode character rendered large; the label text is shown
-        only in the tooltip, keeping the header compact and uncluttered.
+        The icon is rendered from icons.py using the current theme colour.
+        A reference is stored in self._icon_btns so _apply_theme() can
+        re-render the icon whenever the user cycles themes.
         """
+        from bridgeit.gui.icons import make_icon
         t = current_theme()
-        btn = QPushButton(icon)
+        icon_color = "#ffffff" if primary else t["text"]
+
+        btn = QPushButton()
+        btn.setIcon(make_icon(icon_name, icon_color, 20))
+        btn.setIconSize(QSize(20, 20))
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setToolTip(tooltip)
-        btn.setFixedSize(36, 34)
+        btn.setFixedSize(38, 36)
 
         if primary:
-            # The Export button gets the orange accent fill so it stands out
             btn.setStyleSheet(
                 f"""
                 QPushButton {{
                     background: {t['accent']};
-                    color: #fff;
                     border: 1px solid {t['accent']};
                     border-radius: 8px;
-                    font-size: 16px;
-                    font-weight: 700;
+                    padding: 0;
                 }}
                 QPushButton:hover {{
                     background: {t['accent_hover']};
@@ -393,7 +399,6 @@ class MainWindow(QMainWindow):
                 QPushButton:disabled {{
                     background: {t['surface']};
                     border-color: {t['border_faint']};
-                    color: {t['border']};
                 }}
                 """
             )
@@ -402,10 +407,9 @@ class MainWindow(QMainWindow):
                 f"""
                 QPushButton {{
                     background: transparent;
-                    color: {t['text']};
                     border: 1px solid transparent;
                     border-radius: 8px;
-                    font-size: 16px;
+                    padding: 0;
                 }}
                 QPushButton:hover {{
                     background: {t['surface_2']};
@@ -417,18 +421,19 @@ class MainWindow(QMainWindow):
                 QPushButton:checked {{
                     background: {t['accent_dim']};
                     border-color: {t['accent']};
-                    color: {t['accent']};
                 }}
                 QPushButton:checked:hover {{
                     background: {t['surface_2']};
                     border-color: {t['accent_hover']};
-                    color: {t['accent_hover']};
                 }}
                 QPushButton:disabled {{
-                    color: {t['border']};
+                    opacity: 0.35;
                 }}
                 """
             )
+
+        # Track for icon re-rendering when theme changes
+        self._icon_btns.append((btn, icon_name, primary))
         return btn
 
     def _style_primary_button(self, btn: QPushButton) -> None:
@@ -605,9 +610,12 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_preview"):
             self._preview.setStyleSheet(f"background: {t['canvas_bg']};")
             self._preview.canvas.update_theme()
-        # Re-style the primary Export SVG button
-        if hasattr(self, "_btn_export"):
-            self._style_primary_button(self._btn_export)
+        # Re-render all icon buttons with the new theme colour
+        if hasattr(self, "_icon_btns"):
+            from bridgeit.gui.icons import make_icon
+            for btn, icon_name, is_primary in self._icon_btns:
+                icon_color = "#ffffff" if is_primary else t["text"]
+                btn.setIcon(make_icon(icon_name, icon_color, 20))
         # Update theme toggle button tooltip to show next theme name
         if hasattr(self, "_btn_theme"):
             self._btn_theme.setToolTip(f"Theme: {theme_label()}  (click to cycle)")
