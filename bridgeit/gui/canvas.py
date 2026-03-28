@@ -38,7 +38,7 @@ from PyQt6.QtWidgets import (
     QGraphicsScene, QGraphicsView, QRubberBand,
 )
 
-from bridgeit.config import PREVIEW_BG_COLOR
+from bridgeit.gui.themes import current_theme
 from bridgeit.pipeline.bridge import Bridge
 from bridgeit.pipeline.trace import Path2D
 
@@ -61,7 +61,9 @@ _COL_BRIDGE_SEL  = QColor("#ef4444")   # red    — selected bridge
 _COL_STAGED_SEL  = QColor("#f59e0b")   # amber  — selected staged bridge
 _COL_PENDING     = QColor("#fbbf24")   # yellow — first bridge click dot
 _COL_SNAP        = QColor("#ffffff")   # white  — snap indicator
-_COL_BG          = QColor(PREVIEW_BG_COLOR)   # dark background
+def _canvas_bg() -> QColor:
+    """Return the canvas background colour from the active theme (called lazily)."""
+    return QColor(current_theme()["canvas_bg"])
 
 # Stroke widths in scene pixels
 _W_NORMAL    = 1.5   # normal (unselected) stroke width
@@ -461,7 +463,7 @@ class InteractiveCanvas(QGraphicsView):
         # AnchorUnderMouse: when zooming, keep the point under the cursor fixed
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
-        self.setBackgroundBrush(QBrush(_COL_BG))
+        self.setBackgroundBrush(QBrush(_canvas_bg()))
 
         # Hide scroll bars — we zoom/pan via mouse wheel and middle-drag
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)

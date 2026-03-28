@@ -43,7 +43,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from bridgeit.config import MUTED_COLOR, PREVIEW_BG_COLOR, TEXT_COLOR
+from bridgeit.gui.themes import current_theme
 from bridgeit.gui.canvas import InteractiveCanvas
 
 
@@ -69,23 +69,25 @@ class DropZone(QWidget):
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
+        t = current_theme()
+
         # Large down-arrow icon — purely decorative hint for the user
         icon_lbl = QLabel("⬇")
         icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_lbl.setStyleSheet("font-size: 48px; color: #4a4a6a;")
+        icon_lbl.setStyleSheet(f"font-size: 48px; color: {t['border']};")
 
         title = QLabel("Drop an image here")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet(f"color: {TEXT_COLOR}; font-size: 18px; font-weight: 600;")
+        title.setStyleSheet(f"color: {t['text']}; font-size: 18px; font-weight: 600;")
 
         sub = QLabel("PNG or JPG — background will be removed automatically")
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sub.setStyleSheet(f"color: {MUTED_COLOR}; font-size: 12px;")
+        sub.setStyleSheet(f"color: {t['text_muted']}; font-size: 12px;")
 
         # RichText allows <b>bold</b> HTML within the label text
-        hint = QLabel("or click <b>Open Image</b> in the toolbar")
+        hint = QLabel(f"or click <b>⊡ Open</b> in the toolbar")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint.setStyleSheet(f"color: {MUTED_COLOR}; font-size: 11px;")
+        hint.setStyleSheet(f"color: {t['text_muted']}; font-size: 11px;")
         hint.setTextFormat(Qt.TextFormat.RichText)
 
         # addStretch() inserts elastic space that pushes content to the centre
@@ -237,7 +239,7 @@ class PreviewPanel(QStackedWidget):
 
         # Start on the empty drop zone page
         self.setCurrentIndex(self.PAGE_DROP)
-        self.setStyleSheet(f"background: {PREVIEW_BG_COLOR};")
+        self.setStyleSheet(f"background: {current_theme()['canvas_bg']};")
 
     # ------------------------------------------------------------------
     # Public API

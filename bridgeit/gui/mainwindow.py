@@ -39,18 +39,12 @@ from PyQt6.QtWidgets import (
 )
 
 from bridgeit.config import (
-    ACCENT_COLOR,
     APP_NAME,
     APP_VERSION,
-    ERROR_COLOR,
-    MUTED_COLOR,
-    PREVIEW_BG_COLOR,
-    SUCCESS_COLOR,
-    SURFACE_COLOR,
-    TEXT_COLOR,
     WINDOW_MIN_HEIGHT,
     WINDOW_MIN_WIDTH,
 )
+from bridgeit.gui.themes import current_theme, next_theme, theme_label
 from bridgeit.gui.controls import ControlsPanel
 from bridgeit.gui.preview import PreviewPanel
 from bridgeit.pipeline.pipeline import PipelineResult, PipelineRunner, PipelineSettings, Stage
@@ -213,11 +207,10 @@ class MainWindow(QMainWindow):
         # QSplitter lets the user drag the divider to resize the panels
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setHandleWidth(1)   # very thin divider line
-        splitter.setStyleSheet(f"QSplitter::handle {{ background: #2d2d42; }}")
+        self._splitter_ref = splitter  # saved so _apply_theme can re-style it
 
         # Left panel: settings controls
         self._controls = ControlsPanel()
-        self._controls.setStyleSheet(f"background: #16162a;")
         # When any setting changes, start the debounce timer
         self._controls.settings_changed.connect(self._on_settings_changed)
 
@@ -240,20 +233,10 @@ class MainWindow(QMainWindow):
 
         # ── Status bar (bottom of window) ─────────────────────────────────
         self._status_bar = QStatusBar()
-        self._status_bar.setStyleSheet(
-            "QStatusBar {"
-            "  background: #0a0a18;"
-            "  border-top: 1px solid #1e1e30;"
-            f" color: {MUTED_COLOR};"
-            "  font-size: 11px;"
-            "  padding: 2px 8px;"
-            "}"
-        )
         self.setStatusBar(self._status_bar)
 
         # Text label — updated by _set_status() to show pipeline progress and errors
         self._status_label = QLabel("Ready — open or drop an image to begin")
-        self._status_label.setStyleSheet(f"color: {MUTED_COLOR}; font-size: 11px;")
 
         # Thin progress bar shown on the right side of the status bar while the pipeline runs.
         # Range (0, 0) = indeterminate "busy" animation (no start/end values needed).
@@ -262,140 +245,139 @@ class MainWindow(QMainWindow):
         self._progress_bar.setFixedWidth(100)
         self._progress_bar.setFixedHeight(4)
         self._progress_bar.hide()   # hidden until a pipeline run starts
-        self._progress_bar.setStyleSheet(
-            "QProgressBar { background: #1e1e30; border-radius: 2px; border: none; }"
-            f"QProgressBar::chunk {{ background: {ACCENT_COLOR}; border-radius: 2px; }}"
-        )
 
         # addWidget = left-aligned; addPermanentWidget = right-aligned (won't be pushed out)
         self._status_bar.addWidget(self._status_label)
         self._status_bar.addPermanentWidget(self._progress_bar)
 
     def _build_toolbar(self) -> QToolBar:
+        t = current_theme()
         toolbar = QToolBar()
         toolbar.setMovable(False)
         toolbar.setFloatable(False)
-        toolbar.setStyleSheet(
-            """
-            QToolBar {
-                background: #0a0a18;
-                border-bottom: 1px solid #1e1e30;
-                padding: 5px 16px;
-                spacing: 4px;
-            }
-            """
-        )
+        toolbar.setIconSize(__import__("PyQt6.QtCore", fromlist=["QSize"]).QSize(20, 20))
+        self._toolbar_ref = toolbar   # saved so _apply_theme can re-style it
 
         # ── Branding ──────────────────────────────────────────────────────
-        logo = QLabel("◆")
-        logo.setStyleSheet(f"color: {ACCENT_COLOR}; font-size: 13px; padding: 0 3px 0 4px;")
-        toolbar.addWidget(logo)
+        self._logo_lbl = QLabel("◆")
+        self._logo_lbl.setStyleSheet(
+            f"color: {t['accent']}; font-size: 14px; padding: 0 4px 0 4px;"
+        )
+        toolbar.addWidget(self._logo_lbl)
 
         name_lbl = QLabel(APP_NAME)
         name_lbl.setStyleSheet(
-            f"color: {TEXT_COLOR}; font-size: 14px; font-weight: 700; letter-spacing: 0.5px;"
+            f"color: {t['text']}; font-size: 14px; font-weight: 700; letter-spacing: 0.5px;"
         )
         toolbar.addWidget(name_lbl)
 
         ver_lbl = QLabel(f"v{APP_VERSION}")
-        ver_lbl.setStyleSheet(f"color: {MUTED_COLOR}; font-size: 10px; padding: 3px 12px 0 5px;")
+        ver_lbl.setStyleSheet(
+            f"color: {t['text_muted']}; font-size: 10px; padding: 3px 14px 0 5px;"
+        )
         toolbar.addWidget(ver_lbl)
 
         toolbar.addWidget(self._toolbar_sep())
 
         # ── File actions ──────────────────────────────────────────────────
-        self._btn_open = self._toolbar_button("Open")
-        self._btn_open.setToolTip("Open an image file")
+        # Each button shows a Unicode icon; the full name appears as a tooltip on hover.
+        self._btn_open = self._toolbar_icon_btn("⊡", "Open Image  (Ctrl+O)")
         self._btn_open.clicked.connect(self._on_open_clicked)
         toolbar.addWidget(self._btn_open)
 
-        self._btn_export = self._toolbar_button("Export SVG", primary=True)
+        self._btn_export = self._toolbar_icon_btn("⬇", "Export SVG", primary=True)
         self._btn_export.setEnabled(False)
-        self._btn_export.setToolTip("Export fabrication-ready SVG")
         self._btn_export.clicked.connect(self._on_export_clicked)
         toolbar.addWidget(self._btn_export)
 
         toolbar.addWidget(self._toolbar_sep())
 
         # ── View toggles ──────────────────────────────────────────────────
-        self._btn_view_image = self._toolbar_button("Original")
+        self._btn_view_image = self._toolbar_icon_btn("⊙", "Original  (background-removed)")
         self._btn_view_image.setEnabled(False)
-        self._btn_view_image.setToolTip("Show background-removed original")
         self._btn_view_image.clicked.connect(self._show_original)
         toolbar.addWidget(self._btn_view_image)
 
-        self._btn_view_svg = self._toolbar_button("Paths")
+        self._btn_view_svg = self._toolbar_icon_btn("⬡", "Cut Paths  (interactive canvas)")
         self._btn_view_svg.setEnabled(False)
-        self._btn_view_svg.setToolTip("Show cut paths / interactive canvas")
         self._btn_view_svg.clicked.connect(self._show_svg)
         toolbar.addWidget(self._btn_view_svg)
 
         toolbar.addWidget(self._toolbar_sep())
 
         # ── Edit tools ────────────────────────────────────────────────────
-        self._btn_delete = self._toolbar_button("Delete ✕")
+        self._btn_delete = self._toolbar_icon_btn("⊗", "Delete selected  (Delete key)")
         self._btn_delete.setEnabled(False)
-        self._btn_delete.setToolTip("Remove selected paths or bridges  (Delete key)")
         self._btn_delete.clicked.connect(self._on_delete_selected)
         toolbar.addWidget(self._btn_delete)
 
-        self._btn_add_bridge = self._toolbar_button("＋ Bridge")
+        self._btn_add_bridge = self._toolbar_icon_btn("⊕", "Add Bridge  (draw a bridge between paths)")
         self._btn_add_bridge.setEnabled(False)
         self._btn_add_bridge.setCheckable(True)
-        self._btn_add_bridge.setToolTip("Place manual bridges between paths")
         self._btn_add_bridge.clicked.connect(self._on_toggle_bridge_mode)
         toolbar.addWidget(self._btn_add_bridge)
 
-        # ── Spacer + help ─────────────────────────────────────────────────
+        # ── Spacer ────────────────────────────────────────────────────────
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(spacer)
 
-        btn_help = self._toolbar_button("?")
-        btn_help.setFixedWidth(32)
-        btn_help.setToolTip("Keyboard shortcuts  (?)")
+        # ── Right-side: theme toggle + help ──────────────────────────────
+        self._btn_theme = self._toolbar_icon_btn("◑", f"Theme: {theme_label()}  (click to cycle)")
+        self._btn_theme.clicked.connect(self._on_theme_toggle)
+        toolbar.addWidget(self._btn_theme)
+
+        btn_help = self._toolbar_icon_btn("?", "Keyboard shortcuts")
         btn_help.clicked.connect(self._show_shortcuts)
         toolbar.addWidget(btn_help)
 
         return toolbar
 
-    @staticmethod
-    def _toolbar_sep() -> QWidget:
+    def _toolbar_sep(self) -> QWidget:
         """Thin vertical divider between toolbar groups."""
+        t = current_theme()
         outer = QWidget()
         outer.setFixedWidth(17)
         inner = QWidget(outer)
         inner.setFixedSize(1, 22)
-        inner.setStyleSheet("background: #252538;")
+        inner.setStyleSheet(f"background: {t['border_faint']};")
         inner.move(8, 5)
         return outer
 
     @staticmethod
-    def _toolbar_button(text: str, primary: bool = False) -> QPushButton:
-        btn = QPushButton(text)
+    def _toolbar_icon_btn(icon: str, tooltip: str, primary: bool = False) -> QPushButton:
+        """Create a compact icon-only toolbar button with a hover tooltip.
+
+        Icon is a Unicode character rendered large; the label text is shown
+        only in the tooltip, keeping the toolbar compact and uncluttered.
+        """
+        t = current_theme()
+        btn = QPushButton(icon)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setToolTip(tooltip)
+        btn.setFixedSize(36, 34)
+
         if primary:
+            # The Export button gets the orange accent fill so it stands out
             btn.setStyleSheet(
-                """
-                QPushButton {
-                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                        stop:0 #8b5cf6, stop:1 #7c3aed);
+                f"""
+                QPushButton {{
+                    background: {t['accent']};
                     color: #fff;
-                    border: 1px solid #6d28d9;
-                    border-radius: 5px;
-                    padding: 5px 18px;
-                    font-weight: 600;
-                    font-size: 12px;
-                }
-                QPushButton:hover {
-                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                        stop:0 #9d6ef8, stop:1 #8b5cf6);
-                }
-                QPushButton:disabled {
-                    background: #1e1228;
-                    border-color: #2a1a3a;
-                    color: #3d2a52;
-                }
+                    border: 1px solid {t['accent']};
+                    border-radius: 8px;
+                    font-size: 16px;
+                    font-weight: 700;
+                }}
+                QPushButton:hover {{
+                    background: {t['accent_hover']};
+                    border-color: {t['accent_hover']};
+                }}
+                QPushButton:disabled {{
+                    background: {t['surface']};
+                    border-color: {t['border_faint']};
+                    color: {t['border']};
+                }}
                 """
             )
         else:
@@ -403,55 +385,231 @@ class MainWindow(QMainWindow):
                 f"""
                 QPushButton {{
                     background: transparent;
-                    color: {TEXT_COLOR};
+                    color: {t['text']};
                     border: 1px solid transparent;
-                    border-radius: 5px;
-                    padding: 5px 12px;
-                    font-size: 12px;
+                    border-radius: 8px;
+                    font-size: 16px;
                 }}
                 QPushButton:hover {{
-                    background: #1e1e30;
-                    border-color: #2d2d45;
+                    background: {t['surface_2']};
+                    border-color: {t['border']};
                 }}
                 QPushButton:pressed {{
-                    background: #161626;
+                    background: {t['surface']};
                 }}
                 QPushButton:checked {{
-                    background: rgba(124, 58, 237, 0.18);
-                    border-color: #7c3aed;
-                    color: #a78bfa;
-                    font-weight: 600;
+                    background: {t['accent_dim']};
+                    border-color: {t['accent']};
+                    color: {t['accent']};
                 }}
                 QPushButton:checked:hover {{
-                    background: rgba(124, 58, 237, 0.28);
+                    background: {t['surface_2']};
+                    border-color: {t['accent_hover']};
+                    color: {t['accent_hover']};
                 }}
                 QPushButton:disabled {{
-                    color: #2d2d45;
+                    color: {t['border']};
                 }}
                 """
             )
         return btn
 
-    def _apply_theme(self) -> None:
-        self.setStyleSheet(
+    def _style_primary_button(self, btn: QPushButton) -> None:
+        """Re-apply primary (accent-fill) style to a button — used after theme change."""
+        t = current_theme()
+        btn.setStyleSheet(
             f"""
-            QMainWindow {{ background: {PREVIEW_BG_COLOR}; }}
-            QSplitter {{ background: {PREVIEW_BG_COLOR}; }}
-            QSplitter::handle {{ background: #1a1a2e; }}
-            QToolTip {{
-                background: #1e1e30;
-                color: {TEXT_COLOR};
-                border: 1px solid #3a3a54;
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-size: 11px;
+            QPushButton {{
+                background: {t['accent']};
+                color: #fff;
+                border: 1px solid {t['accent']};
+                border-radius: 8px;
+                font-size: 16px;
+                font-weight: 700;
+            }}
+            QPushButton:hover {{
+                background: {t['accent_hover']};
+                border-color: {t['accent_hover']};
+            }}
+            QPushButton:disabled {{
+                background: {t['surface']};
+                border-color: {t['border_faint']};
+                color: {t['border']};
             }}
             """
         )
 
+    def _apply_theme(self) -> None:
+        """Re-apply the active theme to every widget in the window.
+
+        We build one large QSS string that covers all widget types and set it
+        on QApplication so every widget everywhere (including dialogs) inherits it.
+        Then we also re-style the few widgets that cache inline stylesheets.
+        """
+        t = current_theme()
+
+        # ── Global application stylesheet ─────────────────────────────────
+        # Setting this on QApplication makes it the base for every widget,
+        # so we don't have to re-style each one individually after a theme change.
+        from PyQt6.QtWidgets import QApplication
+        QApplication.instance().setStyleSheet(f"""
+            QMainWindow, QWidget {{
+                background: {t["window_bg"]};
+                color: {t["text"]};
+                font-family: "Ubuntu", "Segoe UI", sans-serif;
+            }}
+            QToolBar {{
+                background: {t["toolbar_bg"]};
+                border-bottom: 1px solid {t["border_faint"]};
+                padding: 4px 16px;
+                spacing: 2px;
+            }}
+            QStatusBar {{
+                background: {t["statusbar_bg"]};
+                border-top: 1px solid {t["border_faint"]};
+                color: {t["text_muted"]};
+                font-size: 11px;
+                padding: 2px 8px;
+            }}
+            QSplitter {{
+                background: {t["window_bg"]};
+            }}
+            QSplitter::handle {{
+                background: {t["splitter"]};
+            }}
+            QToolTip {{
+                background: {t["tooltip_bg"]};
+                color: {t["text"]};
+                border: 1px solid {t["tooltip_border"]};
+                border-radius: 6px;
+                padding: 5px 10px;
+                font-size: 11px;
+            }}
+            QPushButton {{
+                background: transparent;
+                color: {t["text"]};
+                border: 1px solid transparent;
+                border-radius: 8px;
+                padding: 5px 10px;
+                font-size: 13px;
+            }}
+            QPushButton:hover {{
+                background: {t["surface_2"]};
+                border-color: {t["border"]};
+            }}
+            QPushButton:pressed {{
+                background: {t["surface"]};
+            }}
+            QPushButton:checked {{
+                background: {t["accent_dim"]};
+                border-color: {t["accent"]};
+                color: {t["accent"]};
+                font-weight: 600;
+            }}
+            QPushButton:checked:hover {{
+                background: {t["surface_2"]};
+                border-color: {t["accent_hover"]};
+            }}
+            QPushButton:disabled {{
+                color: {t["border"]};
+            }}
+            QDoubleSpinBox, QSpinBox {{
+                background: {t["surface"]};
+                color: {t["text"]};
+                border: 1px solid {t["border"]};
+                border-radius: 6px;
+                padding: 2px 4px;
+            }}
+            QDoubleSpinBox:focus, QSpinBox:focus {{
+                border-color: {t["accent"]};
+            }}
+            QSlider::groove:horizontal {{
+                height: 4px;
+                background: {t["border"]};
+                border-radius: 2px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {t["accent"]};
+                border: none;
+                width: 14px;
+                height: 14px;
+                margin: -5px 0;
+                border-radius: 7px;
+            }}
+            QSlider::sub-page:horizontal {{
+                background: {t["accent"]};
+                border-radius: 2px;
+            }}
+            QLabel {{
+                background: transparent;
+                color: {t["text"]};
+            }}
+            QProgressBar {{
+                background: {t["surface"]};
+                border-radius: 2px;
+                border: none;
+            }}
+            QProgressBar::chunk {{
+                background: {t["accent"]};
+                border-radius: 2px;
+            }}
+            QDialog {{
+                background: {t["sidebar_bg"]};
+                color: {t["text"]};
+            }}
+            QFrame[frameShape="4"], QFrame[frameShape="5"] {{
+                color: {t["border"]};
+            }}
+        """)
+
+        # ── Per-widget re-styling for items with inline overrides ─────────
+        # These widgets set their own inline stylesheets during _build_toolbar /
+        # _build_ui, so we need to refresh them after a theme change.
+        if hasattr(self, "_toolbar_ref"):
+            self._toolbar_ref.setStyleSheet(
+                f"QToolBar {{ background: {t['toolbar_bg']}; "
+                f"border-bottom: 1px solid {t['border_faint']}; "
+                f"padding: 4px 16px; spacing: 2px; }}"
+            )
+        if hasattr(self, "_status_bar"):
+            self._status_bar.setStyleSheet(
+                f"QStatusBar {{ background: {t['statusbar_bg']}; "
+                f"border-top: 1px solid {t['border_faint']}; "
+                f"color: {t['text_muted']}; font-size: 11px; padding: 2px 8px; }}"
+            )
+        if hasattr(self, "_status_label"):
+            self._status_label.setStyleSheet(
+                f"color: {t['text_muted']}; font-size: 11px;"
+            )
+        if hasattr(self, "_splitter_ref"):
+            self._splitter_ref.setStyleSheet(
+                f"QSplitter::handle {{ background: {t['splitter']}; }}"
+            )
+        if hasattr(self, "_controls"):
+            self._controls.setStyleSheet(f"background: {t['sidebar_bg']};")
+            self._controls.apply_theme(t)
+        if hasattr(self, "_preview"):
+            self._preview.setStyleSheet(f"background: {t['canvas_bg']};")
+        # Re-style the primary Export SVG button
+        if hasattr(self, "_btn_export"):
+            self._style_primary_button(self._btn_export)
+        # Update theme toggle button tooltip to show next theme name
+        if hasattr(self, "_btn_theme"):
+            self._btn_theme.setToolTip(f"Theme: {theme_label()}  (click to cycle)")
+        if hasattr(self, "_logo_lbl"):
+            self._logo_lbl.setStyleSheet(
+                f"color: {t['accent']}; font-size: 14px; padding: 0 4px 0 4px;"
+            )
+
     # ------------------------------------------------------------------
     # Slots
     # ------------------------------------------------------------------
+
+    @pyqtSlot()
+    def _on_theme_toggle(self) -> None:
+        """Cycle Dark → Light → Blackout → Dark and re-apply the theme."""
+        next_theme()          # advance the global theme state in themes.py
+        self._apply_theme()   # re-style every widget with the new palette
 
     @pyqtSlot()
     def _on_open_clicked(self) -> None:
@@ -625,12 +783,12 @@ class MainWindow(QMainWindow):
     @pyqtSlot()
     def _show_shortcuts(self) -> None:
         from PyQt6.QtWidgets import QDialog, QDialogButtonBox
+        t = current_theme()
         dlg = QDialog(self)
         dlg.setWindowTitle("Keyboard Shortcuts")
-        dlg.setMinimumWidth(420)
+        dlg.setMinimumWidth(440)
         dlg.setStyleSheet(
-            f"background: #16162a; color: {TEXT_COLOR};"
-            f"font-size: 12px;"
+            f"background: {t['sidebar_bg']}; color: {t['text']}; font-size: 12px;"
         )
 
         layout = QVBoxLayout(dlg)
@@ -664,7 +822,7 @@ class MainWindow(QMainWindow):
             # Section header
             hdr = QLabel(section_title)
             hdr.setStyleSheet(
-                f"color: {MUTED_COLOR}; font-size: 10px; font-weight: 600;"
+                f"color: {t['text_muted']}; font-size: 10px; font-weight: 600;"
                 f"letter-spacing: 1px; padding-top: 16px; padding-bottom: 4px;"
             )
             layout.addWidget(hdr)
@@ -672,7 +830,7 @@ class MainWindow(QMainWindow):
             # Divider
             div = QFrame()
             div.setFrameShape(QFrame.Shape.HLine)
-            div.setStyleSheet(f"color: #2a2a3e;")
+            div.setStyleSheet(f"color: {t['border']};")
             layout.addWidget(div)
 
             for key, desc in rows:
@@ -680,12 +838,13 @@ class MainWindow(QMainWindow):
                 row.setContentsMargins(0, 5, 0, 0)
                 key_lbl = QLabel(key)
                 key_lbl.setStyleSheet(
-                    f"color: {TEXT_COLOR}; font-family: monospace; font-size: 11px;"
-                    f"background: #2a2a3e; border-radius: 3px; padding: 1px 6px;"
+                    f"color: {t['text']}; font-family: monospace; font-size: 11px;"
+                    f"background: {t['surface']}; border: 1px solid {t['border']};"
+                    f"border-radius: 4px; padding: 1px 6px;"
                 )
-                key_lbl.setFixedWidth(190)
+                key_lbl.setFixedWidth(200)
                 desc_lbl = QLabel(desc)
-                desc_lbl.setStyleSheet(f"color: {MUTED_COLOR}; font-size: 11px;")
+                desc_lbl.setStyleSheet(f"color: {t['text_muted']}; font-size: 11px;")
                 row.addWidget(key_lbl)
                 row.addWidget(desc_lbl)
                 row.addStretch()
@@ -694,9 +853,9 @@ class MainWindow(QMainWindow):
         layout.addSpacing(16)
         btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         btns.setStyleSheet(
-            f"QPushButton {{ background: {SURFACE_COLOR}; color: {TEXT_COLOR};"
-            f"border: 1px solid #3a3a54; border-radius: 6px; padding: 5px 16px; }}"
-            f"QPushButton:hover {{ background: #34344e; }}"
+            f"QPushButton {{ background: {t['surface']}; color: {t['text']};"
+            f"border: 1px solid {t['border']}; border-radius: 8px; padding: 5px 16px; }}"
+            f"QPushButton:hover {{ background: {t['surface_2']}; }}"
         )
         btns.rejected.connect(dlg.accept)
         layout.addWidget(btns)
@@ -777,20 +936,20 @@ class MainWindow(QMainWindow):
         n = canvas.staged_count   # number of staged (unconfirmed) bridges
 
         if mode_str == "bridge_confirm":
-            # Bridges staged — change button to "Confirm" and give count
+            # Bridges staged — button glows orange; tooltip shows count + Enter hint
             self._bridge_confirming = True
             self._btn_add_bridge.setChecked(True)
-            label = f"Confirm Bridges ({n})" if n > 1 else "Confirm Bridge"
-            self._btn_add_bridge.setText(label)
+            label = f"Confirm {n} Bridges  (Enter)" if n > 1 else "Confirm Bridge  (Enter)"
+            self._btn_add_bridge.setToolTip(label)
             self._set_status(
                 f"{n} bridge{'s' if n != 1 else ''} staged — "
-                "place more, or press Enter / Confirm to apply  ·  Escape to discard"
+                "place more, or press Enter / click ⊕ to apply  ·  Escape to discard"
             )
         elif mode_str == "bridge_pt2":
             # First point placed — prompt for second click
             self._bridge_confirming = False
             self._btn_add_bridge.setChecked(True)
-            self._btn_add_bridge.setText("Cancel Bridge")
+            self._btn_add_bridge.setToolTip("Cancel Bridge Mode  (Escape)")
             self._set_status(
                 "Click second point to complete bridge  ·  hold Shift for straight lines"
             )
@@ -798,7 +957,7 @@ class MainWindow(QMainWindow):
             # Entered bridge mode — prompt for first click
             self._bridge_confirming = False
             self._btn_add_bridge.setChecked(True)
-            self._btn_add_bridge.setText("Cancel Bridge")
+            self._btn_add_bridge.setToolTip("Cancel Bridge Mode  (Escape)")
             self._set_status(
                 "Click a point on a path to start a bridge  ·  hold Shift for straight lines"
             )
@@ -806,7 +965,7 @@ class MainWindow(QMainWindow):
             # Back to normal select mode
             self._bridge_confirming = False
             self._btn_add_bridge.setChecked(False)
-            self._btn_add_bridge.setText("Add Bridge")
+            self._btn_add_bridge.setToolTip("Add Bridge  (draw a bridge between paths)")
             self._set_status("Select mode — click paths to select, Delete to remove")
 
     # ------------------------------------------------------------------
@@ -955,7 +1114,8 @@ class MainWindow(QMainWindow):
             success: If True, colour the text green (done / exported successfully).
             error:   If True, colour the text red (something went wrong).
         """
-        color = SUCCESS_COLOR if success else (ERROR_COLOR if error else MUTED_COLOR)
+        t = current_theme()
+        color = t["success"] if success else (t["error"] if error else t["text_muted"])
         self._status_label.setStyleSheet(f"color: {color}; font-size: 11px; padding: 0;")
         self._status_label.setText(message)
 

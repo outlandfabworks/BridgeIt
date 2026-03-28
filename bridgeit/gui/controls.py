@@ -42,14 +42,11 @@ from PyQt6.QtWidgets import (
 )
 
 from bridgeit.config import (
-    ACCENT_COLOR,
     DEFAULT_BRIDGE_WIDTH_MM,
     DEFAULT_CONTOUR_SMOOTHING,
     DEFAULT_MIN_CONTOUR_AREA,
-    MUTED_COLOR,
-    SURFACE_COLOR,
-    TEXT_COLOR,
 )
+from bridgeit.gui.themes import current_theme
 from bridgeit.pipeline.pipeline import PipelineSettings
 
 
@@ -87,18 +84,22 @@ class ControlsPanel(QWidget):
 
         # ── Panel header ──────────────────────────────────────────────────
         # A thin strip at the top labelled "Settings"
-        header = QWidget()
-        header.setFixedHeight(44)
-        header.setStyleSheet("background: #0a0a18; border-bottom: 1px solid #1a1a2e;")
-        hlay = QHBoxLayout(header)
-        hlay.setContentsMargins(16, 0, 16, 0)
-        hdr_lbl = QLabel("Settings")
-        hdr_lbl.setStyleSheet(
-            f"color: {TEXT_COLOR}; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;"
+        t = current_theme()
+        self._header = QWidget()
+        self._header.setObjectName("PanelHeader")
+        self._header.setFixedHeight(44)
+        self._header.setStyleSheet(
+            f"background: {t['toolbar_bg']}; border-bottom: 1px solid {t['border_faint']};"
         )
-        hlay.addWidget(hdr_lbl)
+        hlay = QHBoxLayout(self._header)
+        hlay.setContentsMargins(16, 0, 16, 0)
+        self._hdr_lbl = QLabel("Settings")
+        self._hdr_lbl.setStyleSheet(
+            f"color: {t['text']}; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;"
+        )
+        hlay.addWidget(self._hdr_lbl)
         hlay.addStretch()   # push the label to the left
-        root.addWidget(header)
+        root.addWidget(self._header)
 
         # ── Scrollable content ────────────────────────────────────────────
         # The main body of the panel holding all the settings controls
@@ -177,11 +178,13 @@ class ControlsPanel(QWidget):
         inner.addSpacing(10)
 
         # A dark card widget to visually group the stats rows
+        t = current_theme()
         info_card = QWidget()
+        self._info_card = info_card   # saved for theme re-application
         info_card.setStyleSheet(
-            "background: #0e0e1e;"
-            "border: 1px solid #1e1e30;"
-            "border-radius: 6px;"
+            f"background: {t['surface']};"
+            f"border: 1px solid {t['border_faint']};"
+            "border-radius: 8px;"
         )
         card_layout = QVBoxLayout(info_card)
         card_layout.setContentsMargins(12, 10, 12, 10)
@@ -248,16 +251,34 @@ class ControlsPanel(QWidget):
 
     def set_bridge_editing_mode(self, editing: bool, count: int = 1) -> None:
         """Highlight the Bridge Width label when editing selected bridge(s)."""
+        t = current_theme()
         if editing:
             # Change the label text to indicate we're editing a specific bridge
             label = f"{count} Bridges" if count > 1 else "Selected Bridge"
             self._bridge_lbl.setText(label)
             # Use the accent colour to visually distinguish "editing a bridge" mode
-            self._bridge_lbl.setStyleSheet(f"color: {ACCENT_COLOR}; font-size: 12px; font-weight: 600;")
+            self._bridge_lbl.setStyleSheet(f"color: {t['accent']}; font-size: 12px; font-weight: 600;")
         else:
             # Restore normal label text and colour
             self._bridge_lbl.setText("Bridge Width")
-            self._bridge_lbl.setStyleSheet(f"color: {TEXT_COLOR}; font-size: 12px;")
+            self._bridge_lbl.setStyleSheet(f"color: {t['text']}; font-size: 12px;")
+
+    def apply_theme(self, t: dict) -> None:
+        """Re-style all controls to match the given theme dict.
+
+        Called by MainWindow._apply_theme() after the user cycles to a new theme.
+        We only need to re-style widgets that have inline stylesheets — the global
+        app stylesheet (set by MainWindow) handles generic types like QSlider, QSpinBox.
+        """
+        self._header.setStyleSheet(
+            f"background: {t['toolbar_bg']}; border-bottom: 1px solid {t['border_faint']};"
+        )
+        self._hdr_lbl.setStyleSheet(
+            f"color: {t['text']}; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;"
+        )
+        self._info_card.setStyleSheet(
+            f"background: {t['surface']}; border: 1px solid {t['border_faint']}; border-radius: 8px;"
+        )
 
     def reset_info(self) -> None:
         # Clear all info card values back to "—" (e.g. when a new image is opened)
@@ -313,6 +334,7 @@ class ControlsPanel(QWidget):
     def _section_label(text: str) -> QWidget:
         # Creates a compact section heading with a coloured accent bar on the left.
         # Returns a QWidget (not a QLabel) so we can include the bar + text together.
+        t = current_theme()
         container = QWidget()
         container.setFixedHeight(18)
         lay = QHBoxLayout(container)
@@ -322,11 +344,11 @@ class ControlsPanel(QWidget):
         # Small coloured rectangle acting as a visual accent bar
         bar = QWidget()
         bar.setFixedSize(3, 12)
-        bar.setStyleSheet(f"background: {ACCENT_COLOR}; border-radius: 1px;")
+        bar.setStyleSheet(f"background: {t['accent']}; border-radius: 1px;")
 
         lbl = QLabel(text)
         lbl.setStyleSheet(
-            f"color: {MUTED_COLOR}; font-size: 10px; font-weight: 600; letter-spacing: 1.5px;"
+            f"color: {t['text_muted']}; font-size: 10px; font-weight: 600; letter-spacing: 1.5px;"
         )
         lay.addWidget(bar)
         lay.addWidget(lbl)
@@ -342,9 +364,10 @@ class ControlsPanel(QWidget):
         # Builds a horizontal row: [Label] [spacer] [SpinBox] [unit text]
         # Returns the spinbox and row layout as a tuple so the caller can
         # add the row to a parent layout and also keep a reference to the spinbox.
+        t = current_theme()
         row = QHBoxLayout()
         lbl = QLabel(label)
-        lbl.setStyleSheet(f"color: {TEXT_COLOR}; font-size: 12px;")
+        lbl.setStyleSheet(f"color: {t['text']}; font-size: 12px;")
         lbl.setToolTip(tooltip)
 
         # QDoubleSpinBox shows floating-point numbers with Up/Down arrow buttons
@@ -356,13 +379,13 @@ class ControlsPanel(QWidget):
         spin.setFixedWidth(72)
         spin.setToolTip(tooltip)
         spin.setStyleSheet(
-            f"QDoubleSpinBox {{ background: {SURFACE_COLOR}; color: {TEXT_COLOR}; "
-            f"border: 1px solid #3a3a54; border-radius: 4px; padding: 2px 4px; }}"
+            f"QDoubleSpinBox {{ background: {t['surface']}; color: {t['text']}; "
+            f"border: 1px solid {t['border']}; border-radius: 6px; padding: 2px 4px; }}"
         )
 
         # Small muted label showing the unit (e.g. "mm")
         unit_lbl = QLabel(unit)
-        unit_lbl.setStyleSheet(f"color: {MUTED_COLOR}; font-size: 11px;")
+        unit_lbl.setStyleSheet(f"color: {t['text_muted']}; font-size: 11px;")
 
         row.addWidget(lbl)
         row.addStretch()
@@ -382,9 +405,10 @@ class ControlsPanel(QWidget):
     ):
         # Same pattern as _labeled_double_spin but for integer-only values.
         # Does NOT return the label reference (callers don't need to change it).
+        t = current_theme()
         row = QHBoxLayout()
         lbl = QLabel(label)
-        lbl.setStyleSheet(f"color: {TEXT_COLOR}; font-size: 12px;")
+        lbl.setStyleSheet(f"color: {t['text']}; font-size: 12px;")
         lbl.setToolTip(tooltip)
 
         # QSpinBox is for integers only; use QDoubleSpinBox for decimals
@@ -395,12 +419,12 @@ class ControlsPanel(QWidget):
         spin.setFixedWidth(72)
         spin.setToolTip(tooltip)
         spin.setStyleSheet(
-            f"QSpinBox {{ background: {SURFACE_COLOR}; color: {TEXT_COLOR}; "
-            f"border: 1px solid #3a3a54; border-radius: 4px; padding: 2px 4px; }}"
+            f"QSpinBox {{ background: {t['surface']}; color: {t['text']}; "
+            f"border: 1px solid {t['border']}; border-radius: 6px; padding: 2px 4px; }}"
         )
 
         unit_lbl = QLabel(unit)
-        unit_lbl.setStyleSheet(f"color: {MUTED_COLOR}; font-size: 11px;")
+        unit_lbl.setStyleSheet(f"color: {t['text_muted']}; font-size: 11px;")
 
         row.addWidget(lbl)
         row.addStretch()
@@ -413,6 +437,7 @@ class ControlsPanel(QWidget):
     def _make_slider(minimum: int, maximum: int, value: int) -> QSlider:
         # QSlider is a horizontal draggable track.
         # Qt.Orientation.Horizontal means the track goes left-to-right.
+        t = current_theme()
         slider = QSlider(Qt.Orientation.Horizontal)
         slider.setRange(minimum, maximum)
         slider.setValue(value)
@@ -424,11 +449,11 @@ class ControlsPanel(QWidget):
             f"""
             QSlider::groove:horizontal {{
                 height: 4px;
-                background: #3a3a54;
+                background: {t['border']};
                 border-radius: 2px;
             }}
             QSlider::handle:horizontal {{
-                background: {ACCENT_COLOR};
+                background: {t['accent']};
                 border: none;
                 width: 14px;
                 height: 14px;
@@ -436,7 +461,7 @@ class ControlsPanel(QWidget):
                 border-radius: 7px;
             }}
             QSlider::sub-page:horizontal {{
-                background: {ACCENT_COLOR};
+                background: {t['accent']};
                 border-radius: 2px;
             }}
             """
@@ -448,11 +473,12 @@ class ControlsPanel(QWidget):
         # Creates a key-value row: [muted label] [spacer] [bold value label]
         # Returns a tuple of (layout, value_label) so the caller can later
         # call value_label.setText(new_value) to update the displayed number.
+        t = current_theme()
         row = QHBoxLayout()
         lbl = QLabel(label)
-        lbl.setStyleSheet(f"color: {MUTED_COLOR}; font-size: 11px;")
+        lbl.setStyleSheet(f"color: {t['text_muted']}; font-size: 11px;")
         val = QLabel(value)
-        val.setStyleSheet(f"color: {TEXT_COLOR}; font-size: 11px; font-weight: 600;")
+        val.setStyleSheet(f"color: {t['text']}; font-size: 11px; font-weight: 600;")
         row.addWidget(lbl)
         row.addStretch()
         row.addWidget(val)
