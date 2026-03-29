@@ -371,6 +371,16 @@ class MainWindow(QMainWindow):
         sep.setStyleSheet(f"background: {t['border_faint']};")
         return sep
 
+    @staticmethod
+    def _make_btn_icon(icon_name: str, icon_color: str, t: dict):
+        """Build a QIcon with Normal and Disabled pixmaps so Qt shows a dim icon when disabled."""
+        from bridgeit.gui.icons import make_icon
+        from PyQt6.QtGui import QIcon
+        icon = QIcon()
+        icon.addPixmap(make_icon(icon_name, icon_color, 20).pixmap(20, 20), QIcon.Mode.Normal)
+        icon.addPixmap(make_icon(icon_name, t["border"], 20).pixmap(20, 20), QIcon.Mode.Disabled)
+        return icon
+
     def _header_btn(self, icon_name: str, tooltip: str, primary: bool = False) -> QPushButton:
         """Create a compact SVG-icon header button with a hover tooltip.
 
@@ -383,7 +393,7 @@ class MainWindow(QMainWindow):
         icon_color = "#ffffff" if primary else t["text"]
 
         btn = QPushButton()
-        btn.setIcon(make_icon(icon_name, icon_color, 20))
+        btn.setIcon(self._make_btn_icon(icon_name, icon_color, t))
         btn.setIconSize(QSize(20, 20))
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setToolTip(tooltip)
@@ -619,12 +629,11 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_preview"):
             self._preview.setStyleSheet(f"background: {t['canvas_bg']};")
             self._preview.canvas.update_theme()
-        # Re-render all icon buttons with the new theme colour
+        # Re-render all icon buttons with the new theme colour (including disabled state)
         if hasattr(self, "_icon_btns"):
-            from bridgeit.gui.icons import make_icon
             for btn, icon_name, is_primary in self._icon_btns:
                 icon_color = "#ffffff" if is_primary else t["text"]
-                btn.setIcon(make_icon(icon_name, icon_color, 20))
+                btn.setIcon(self._make_btn_icon(icon_name, icon_color, t))
         # Update theme toggle button tooltip to show next theme name
         if hasattr(self, "_btn_theme"):
             self._btn_theme.setToolTip(f"Theme: {theme_label()}  (click to cycle)")
