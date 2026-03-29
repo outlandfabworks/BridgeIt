@@ -146,7 +146,7 @@ class ControlsPanel(QWidget):
 
         self._info_islands = self._info_row(
             "Islands detected", "",
-            "Closed shapes found in the image — each one needs bridges to stay attached"
+            "Closed shapes found in the image. Each one needs bridges to stay attached"
         )
         self._info_bridges = self._info_row(
             "Bridges added", "",
