@@ -114,6 +114,17 @@ _ICONS: dict[str, str] = {
       <line x1="6.5" y1="12.5" x2="13.5" y2="12.5"
             stroke="COLOR" stroke-width="1.6" stroke-linecap="round"/>
     </svg>""",
+
+    # Erase background — eraser shape: rectangle body + baseline
+    "erase": """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none">
+      <rect x="3" y="7" width="12" height="7" rx="1.5"
+            stroke="COLOR" stroke-width="1.5"/>
+      <line x1="9" y1="7" x2="9" y2="14"
+            stroke="COLOR" stroke-width="1.5"/>
+      <line x1="2" y1="16.5" x2="18" y2="16.5"
+            stroke="COLOR" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>""",
 }
 
 # ---------------------------------------------------------------------------

@@ -171,6 +171,12 @@ class MainWindow(QMainWindow):
         # ── Bridge toolbar state ──────────────────────────────────────────
         # True when there are staged bridges and the toolbar button acts as "Confirm"
         self._bridge_confirming: bool = False
+
+        # ── Background erase state ────────────────────────────────────────
+        # Original PIL Image (pre-processing) — used for colour sampling in erase mode
+        self._source_image: Optional[Image.Image] = None
+        # Colours the user has sampled for erasure: [(r, g, b), ...]
+        self._erase_colors: list = []
         # Index of the bridge currently being resized (-1 = none selected)
         self._editing_bridge_idx: int = -1
 
@@ -200,6 +206,9 @@ class MainWindow(QMainWindow):
 
         # Controls start disabled — enabled once the first pipeline run completes
         self._controls.set_controls_enabled(False)
+
+        # Colour sampling signal from the image preview (erase mode)
+        self._preview.img_preview.color_sampled.connect(self._on_color_sampled)
 
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
         self.setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
@@ -366,6 +375,16 @@ class MainWindow(QMainWindow):
         self._btn_add_bridge.setCheckable(True)
         self._btn_add_bridge.clicked.connect(self._on_toggle_bridge_mode)
         hlay.addWidget(self._btn_add_bridge)
+
+        hlay.addSpacing(4)
+        hlay.addWidget(self._header_sep())
+        hlay.addSpacing(4)
+
+        self._btn_erase = self._header_btn("erase", "Erase Background  — click to enter erase mode")
+        self._btn_erase.setEnabled(False)
+        self._btn_erase.setCheckable(True)
+        self._btn_erase.clicked.connect(self._on_toggle_erase_mode)
+        hlay.addWidget(self._btn_erase)
 
         # ── RIGHT: meta controls ──────────────────────────────────────────
         hlay.addStretch()
@@ -700,15 +719,22 @@ class MainWindow(QMainWindow):
         self._btn_view_svg.setEnabled(False)
         self._btn_delete.setEnabled(False)
         self._btn_add_bridge.setEnabled(False)
+        self._btn_erase.setEnabled(False)
+        self._btn_erase.setChecked(False)
+        self._preview.img_preview.set_erase_mode(False)
+
+        # Clear erase colours — new image means fresh start
+        self._erase_colors = []
 
         # Show the original file right away — don't wait for background removal
         try:
             from PIL import Image as _Image
             orig = _Image.open(path)
+            self._source_image = orig  # store for erase mode colour sampling
             self._preview.show_image_from_pil(orig)
             self._btn_view_image.setEnabled(True)
         except Exception:
-            pass   # if loading fails, we'll get a proper error from the pipeline
+            self._source_image = None
         self._run_pipeline(source=path, preview_only=False)
 
     @pyqtSlot(object)
@@ -873,6 +899,7 @@ class MainWindow(QMainWindow):
                 ("Ctrl+Z",                "Undo last delete or bridge confirm"),
                 ("Ctrl+Shift+Z",          "Redo"),
                 ("Home",                  "Fit canvas to window"),
+                ("Erase button",          "Click background pixels to remove colour range"),
             ]),
             ("NAVIGATION", [
                 ("Scroll wheel",          "Zoom in / out"),
@@ -1070,6 +1097,9 @@ class MainWindow(QMainWindow):
         if settings is None:
             settings = self._controls.get_settings()
 
+        # Inject erase colours managed by the main window (not in the controls panel)
+        settings.erase_colors = list(self._erase_colors)
+
         # Create a fresh PipelineRunner with the current settings.
         # The on_progress lambda updates the status bar at each stage.
         runner = PipelineRunner(
@@ -1163,6 +1193,7 @@ class MainWindow(QMainWindow):
         self._controls.update_info(islands, bridges, paths, result.elapsed_seconds)
 
         self._btn_export.setEnabled(True)
+        self._btn_erase.setEnabled(True)
         self._controls.set_controls_enabled(True)
         self._set_status(
             f"Done — {islands} island(s), {bridges} bridge(s) in {result.elapsed_seconds:.2f}s",
@@ -1189,6 +1220,65 @@ class MainWindow(QMainWindow):
     @pyqtSlot()
     def _on_fit_view(self) -> None:
         self._preview.canvas.fit_view()
+
+    @pyqtSlot()
+    def _on_toggle_erase_mode(self) -> None:
+        """Enter or exit background-erase mode.
+
+        First click: enter erase mode — show original image so the user can
+        click on background areas to sample their colour.
+        Second click (while in erase mode): clear all sampled colours and exit,
+        reverting to auto background removal.
+        """
+        if self._btn_erase.isChecked():
+            # Entering erase mode — show the original image for colour sampling
+            if self._source_image is not None:
+                self._preview.show_image_from_pil(self._source_image)
+            self._preview.img_preview.set_erase_mode(True)
+            n = len(self._erase_colors)
+            tip = (
+                "Erase mode ON — click on background areas to sample colours.  "
+                f"({n} colour{'s' if n != 1 else ''} sampled)  "
+                "Click button again to clear and exit."
+            )
+            self._btn_erase.setToolTip(tip)
+            self._set_status("Erase mode: click on background areas to remove them")
+        else:
+            # Exiting erase mode — clear colours, revert to auto bg removal
+            self._erase_colors = []
+            self._preview.img_preview.set_erase_mode(False)
+            self._btn_erase.setToolTip("Erase Background  — click to enter erase mode")
+            self._set_status("Erase colours cleared — using auto background removal")
+            # Show the nobg image again if we have one
+            if self._nobg_image is not None:
+                self._preview.show_image_from_pil(self._nobg_image)
+            # Re-run so the pipeline reverts to auto-removal
+            self._run_pipeline(source=self._last_result.source_path if self._last_result else None,
+                               preview_only=False)
+
+    @pyqtSlot(int, int, int)
+    def _on_color_sampled(self, r: int, g: int, b: int) -> None:
+        """Called when the user clicks on the image in erase mode.
+
+        Adds the sampled colour to the erase list and kicks off a pipeline
+        re-run with colour-range erasure applied.
+        """
+        color = (r, g, b)
+        # Avoid duplicates (within ±5 per channel)
+        for cr, cg, cb in self._erase_colors:
+            if abs(cr - r) < 5 and abs(cg - g) < 5 and abs(cb - b) < 5:
+                return
+        self._erase_colors.append(color)
+        n = len(self._erase_colors)
+        self._btn_erase.setToolTip(
+            f"Erase mode ON — {n} colour{'s' if n != 1 else ''} sampled.  "
+            "Click more areas or click button to clear and exit."
+        )
+        self._set_status(f"Erase: sampled #{r:02x}{g:02x}{b:02x} — re-running pipeline…")
+        # Re-run pipeline with the updated erase colours
+        src = self._last_result.source_path if self._last_result else None
+        if src:
+            self._run_pipeline(source=src, preview_only=False)
 
     # ------------------------------------------------------------------
     # Helpers

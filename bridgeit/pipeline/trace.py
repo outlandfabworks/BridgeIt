@@ -109,7 +109,11 @@ def _find_contours(binary: np.ndarray, min_area: float) -> List[np.ndarray]:
     # Sort largest → smallest so the primary (outer) shape comes first in the list.
     # This matters for the island-detection stage that follows.
     filtered.sort(key=cv2.contourArea, reverse=True)
-    return filtered
+
+    # Hard cap: an AI-processed complex image can still produce thousands of
+    # tiny contours after area filtering.  Keep only the largest 500 to
+    # prevent the tracing stage from hanging the process.
+    return filtered[:500]
 
 
 def _contours_to_paths(contours: List[np.ndarray], smoothing: float) -> List[Path2D]:

@@ -15,10 +15,15 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
-from typing import Union
+from typing import List, Tuple, Union
 
 import numpy as np
 from PIL import Image
+
+# Maximum pixel dimension for AI processing.  Large images are downscaled
+# before rembg to prevent the contour-tracing stage from hanging on the
+# massive noisy alpha masks that the AI produces at full resolution.
+_MAX_PROCESS_DIM = 1500
 
 
 def remove_background(source: Union[str, Path, Image.Image]) -> Image.Image:
@@ -38,6 +43,10 @@ def remove_background(source: Union[str, Path, Image.Image]) -> Image.Image:
     # Load whatever form of input was given into a PIL Image object
     img = _load_image(source)
 
+    # Downscale very large images before processing — rembg and the
+    # subsequent contour trace both suffer badly on huge images.
+    img = _cap_size(img)
+
     # Choose the removal strategy based on whether this looks like a logo
     if _is_flat_graphic(img):
         # Logos/flat graphics: use the fast colour-threshold approach
@@ -45,6 +54,72 @@ def remove_background(source: Union[str, Path, Image.Image]) -> Image.Image:
     else:
         # Real photos: use the AI model for accurate subject detection
         return _rembg_removal(img)
+
+
+def color_erase_removal(
+    img: Image.Image,
+    colors: List[Tuple[int, int, int]],
+    tolerance: float = 50.0,
+) -> Image.Image:
+    """Remove background by making pixels near any of the given colours transparent.
+
+    Useful for images where the auto-detection fails (complex/gradient backgrounds).
+    The user picks representative background colours; this function removes all
+    pixels within `tolerance` Euclidean distance in RGB space.
+
+    A soft transition is applied around the tolerance edge to avoid harsh cutouts.
+    Morphological cleanup removes isolated specks left by the colour mask.
+
+    Args:
+        img:       Source image (any mode — converted to RGBA internally).
+        colors:    List of (R, G, B) tuples sampled from the background.
+        tolerance: Euclidean RGB distance within which pixels are erased.
+
+    Returns:
+        RGBA image with matching background pixels made transparent.
+    """
+    import cv2
+    rgb = np.array(img.convert("RGB"), dtype=np.float32)
+    h, w = rgb.shape[:2]
+
+    # Start with full opacity
+    alpha = np.ones((h, w), dtype=np.float32) * 255.0
+
+    half_tol = tolerance * 0.5
+    for r, g, b in colors:
+        diff = rgb - np.array([r, g, b], dtype=np.float32)
+        dist = np.sqrt(np.sum(diff ** 2, axis=2))
+        # Pixels inside half-tolerance → fully transparent
+        # Pixels between half and full tolerance → fade out linearly
+        fade = np.clip((dist - half_tol) / half_tol, 0.0, 1.0)
+        alpha = np.minimum(alpha, fade * 255.0)
+
+    alpha_u8 = alpha.astype(np.uint8)
+
+    # Clean up small isolated specks left by the colour mask
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    alpha_u8 = cv2.morphologyEx(alpha_u8, cv2.MORPH_OPEN, kernel, iterations=1)
+
+    rgba = np.dstack([rgb.astype(np.uint8), alpha_u8])
+    return Image.fromarray(rgba, "RGBA")
+
+
+# ---------------------------------------------------------------------------
+# Size cap
+# ---------------------------------------------------------------------------
+
+def _cap_size(img: Image.Image) -> Image.Image:
+    """Downscale if the image's largest dimension exceeds _MAX_PROCESS_DIM.
+
+    Prevents rembg from spending forever on huge images and stops the
+    subsequent contour-tracing stage from generating millions of tiny paths.
+    """
+    w, h = img.size
+    if max(w, h) <= _MAX_PROCESS_DIM:
+        return img
+    scale = _MAX_PROCESS_DIM / max(w, h)
+    new_size = (int(w * scale), int(h * scale))
+    return img.resize(new_size, Image.LANCZOS)
 
 
 # ---------------------------------------------------------------------------

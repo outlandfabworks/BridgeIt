@@ -134,16 +134,24 @@ class DropZone(QWidget):
 class ImagePreview(QLabel):
     """Zoomable/pannable image preview."""
 
+    # Emitted when the user clicks in erase mode — carries the sampled (R, G, B)
+    color_sampled = pyqtSignal(int, int, int)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._pixmap: Optional[QPixmap] = None   # the image to display
         self._zoom = 1.0                          # current zoom level (1.0 = fit to window)
         self._offset = QPointF(0, 0)             # pan offset in pixels
         self._drag_start: Optional[QPointF] = None  # mouse position at start of pan drag
+        self._erase_mode = False                  # when True, left-click samples a colour
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setAcceptDrops(True)
         # Expanding policy lets the widget grow to fill all available space
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+    def set_erase_mode(self, on: bool) -> None:
+        self._erase_mode = on
+        self.setCursor(Qt.CursorShape.CrossCursor if on else Qt.CursorShape.ArrowCursor)
 
     def set_pixmap(self, pixmap: QPixmap) -> None:
         # Load a new image and reset zoom/pan to the default "fit in window" state
@@ -192,6 +200,22 @@ class ImagePreview(QLabel):
         self.update()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        # In erase mode, left-click samples the colour at the clicked image pixel
+        if self._erase_mode and event.button() == Qt.MouseButton.LeftButton and self._pixmap:
+            w, h = self.width(), self.height()
+            pw, ph = self._pixmap.width(), self._pixmap.height()
+            scale = min(w / pw, h / ph) * self._zoom
+            img_x = (w - pw * scale) / 2 + self._offset.x()
+            img_y = (h - ph * scale) / 2 + self._offset.y()
+            sx = event.position().x()
+            sy = event.position().y()
+            px = int((sx - img_x) / scale)
+            py = int((sy - img_y) / scale)
+            if 0 <= px < pw and 0 <= py < ph:
+                qimg = self._pixmap.toImage()
+                c = QColor(qimg.pixel(px, py))
+                self.color_sampled.emit(c.red(), c.green(), c.blue())
+            return  # don't start a pan drag in erase mode
         # Middle-click starts a pan drag — record where the mouse is
         if event.button() == Qt.MouseButton.MiddleButton:
             self._drag_start = event.position()
@@ -257,6 +281,10 @@ class PreviewPanel(QStackedWidget):
     def canvas(self) -> InteractiveCanvas:
         # Expose the canvas so the main window can load paths and connect signals
         return self._canvas
+
+    @property
+    def img_preview(self) -> ImagePreview:
+        return self._img_preview
 
     def show_drop_zone(self) -> None:
         # Switch to the empty-state page (e.g. after processing fails)
