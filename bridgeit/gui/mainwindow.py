@@ -52,6 +52,17 @@ from bridgeit.gui.canvas import InteractiveCanvas, Mode as CanvasMode
 from bridgeit.pipeline.export import make_preview_svg
 
 
+# Maps each pipeline Stage to a human-readable position number (EXPORT omitted
+# from status bar since it's near-instant and the "Done" message follows immediately).
+_STAGE_NUM: dict = {
+    Stage.REMOVE_BG: 1,
+    Stage.TRACE:     2,
+    Stage.ANALYZE:   3,
+    Stage.BRIDGE:    4,
+    Stage.EXPORT:    4,   # export is bundled with bridge step visually
+}
+
+
 def _bridge_rect(
     pt1: tuple,
     pt2: tuple,
@@ -183,6 +194,12 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+S"), self).activated.connect(self._on_export_clicked)
         QShortcut(QKeySequence("Ctrl+O"), self).activated.connect(self._on_open_clicked)
         QShortcut(QKeySequence("B"), self).activated.connect(self._on_toggle_bridge_mode)
+        QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(self._on_undo)
+        QShortcut(QKeySequence("Ctrl+Shift+Z"), self).activated.connect(self._on_redo)
+        QShortcut(QKeySequence("Home"), self).activated.connect(self._on_fit_view)
+
+        # Controls start disabled — enabled once the first pipeline run completes
+        self._controls.set_controls_enabled(False)
 
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
         self.setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
@@ -853,6 +870,9 @@ class MainWindow(QMainWindow):
                 ("Ctrl+O",                "Open image file"),
                 ("Ctrl+S",                "Export SVG"),
                 ("B",                     "Toggle bridge mode"),
+                ("Ctrl+Z",                "Undo last delete or bridge confirm"),
+                ("Ctrl+Shift+Z",          "Redo"),
+                ("Home",                  "Fit canvas to window"),
             ]),
             ("NAVIGATION", [
                 ("Scroll wheel",          "Zoom in / out"),
@@ -1054,7 +1074,9 @@ class MainWindow(QMainWindow):
         # The on_progress lambda updates the status bar at each stage.
         runner = PipelineRunner(
             settings=settings,
-            on_progress=lambda stage, msg: self._set_status(msg),
+            on_progress=lambda stage, msg: self._set_status(
+                f"{msg}  ({_STAGE_NUM[stage]}/4)"
+            ),
         )
 
         # Create the worker object (not a thread itself — it just holds the logic)
@@ -1141,6 +1163,7 @@ class MainWindow(QMainWindow):
         self._controls.update_info(islands, bridges, paths, result.elapsed_seconds)
 
         self._btn_export.setEnabled(True)
+        self._controls.set_controls_enabled(True)
         self._set_status(
             f"Done — {islands} island(s), {bridges} bridge(s) in {result.elapsed_seconds:.2f}s",
             success=True,
@@ -1154,6 +1177,18 @@ class MainWindow(QMainWindow):
     def _on_pipeline_error(self, message: str) -> None:
         self._set_busy(False)
         self._set_status(f"Error: {message}", error=True)
+
+    @pyqtSlot()
+    def _on_undo(self) -> None:
+        self._preview.canvas.undo()
+
+    @pyqtSlot()
+    def _on_redo(self) -> None:
+        self._preview.canvas.redo()
+
+    @pyqtSlot()
+    def _on_fit_view(self) -> None:
+        self._preview.canvas.fit_view()
 
     # ------------------------------------------------------------------
     # Helpers

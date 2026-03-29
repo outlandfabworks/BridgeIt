@@ -498,6 +498,11 @@ class InteractiveCanvas(QGraphicsView):
         self._staged_data: List[Tuple[Tuple, Tuple]] = []   # [(pt1, pt2), ...]
         self._staged_items: List[_StagedBridgeItem] = []
 
+        # ── Undo / redo stacks ────────────────────────────────────────────
+        # Each entry is a snapshot: (excluded, manual_bridges, deleted_auto_bridges)
+        self._undo_stack: List[Tuple] = []
+        self._redo_stack: List[Tuple] = []
+
         # ── Active first-point placement ──────────────────────────────────
         # When the user clicks in bridge mode, _bridge_pt1 holds the first endpoint
         # until they click again to complete the bridge.
@@ -535,6 +540,48 @@ class InteractiveCanvas(QGraphicsView):
     @property
     def staged_count(self) -> int:
         return len(self._staged_data)
+
+    def fit_view(self) -> None:
+        """Fit all canvas content back into the visible area (reset zoom/pan)."""
+        bbox = self._scene.itemsBoundingRect()
+        if bbox.isValid():
+            self.fitInView(bbox, Qt.AspectRatioMode.KeepAspectRatio)
+
+    def undo(self) -> None:
+        """Undo the last delete or bridge-confirm action."""
+        if not self._undo_stack:
+            return
+        # Save current state to redo stack before restoring
+        self._redo_stack.append(self._snapshot())
+        excluded, manual, deleted_auto = self._undo_stack.pop()
+        self._excluded = excluded
+        self._manual_bridges = list(manual)
+        self._deleted_auto_bridges = deleted_auto
+        self.paths_modified.emit()
+
+    def redo(self) -> None:
+        """Redo the last undone action."""
+        if not self._redo_stack:
+            return
+        self._undo_stack.append(self._snapshot())
+        excluded, manual, deleted_auto = self._redo_stack.pop()
+        self._excluded = excluded
+        self._manual_bridges = list(manual)
+        self._deleted_auto_bridges = deleted_auto
+        self.paths_modified.emit()
+
+    def _snapshot(self) -> Tuple:
+        """Return a deep copy of the current mutable canvas state."""
+        return (
+            set(self._excluded),
+            list(self._manual_bridges),
+            set(self._deleted_auto_bridges),
+        )
+
+    def _push_undo(self) -> None:
+        """Save current state before a destructive operation; clear redo stack."""
+        self._undo_stack.append(self._snapshot())
+        self._redo_stack.clear()
 
     def update_theme(self) -> None:
         """Re-apply the active theme colour to the canvas background.
@@ -643,6 +690,7 @@ class InteractiveCanvas(QGraphicsView):
           3. Confirmed bridges — removed from _manual_bridges or _deleted_auto_bridges;
              triggers a canvas reload via paths_modified.
         """
+        self._push_undo()
         changed = False
 
         # ── 1. Delete selected staged bridges ─────────────────────────────
@@ -700,6 +748,7 @@ class InteractiveCanvas(QGraphicsView):
         """Commit all staged bridges as confirmed manual bridges."""
         if not self._staged_data:
             return
+        self._push_undo()
         for staged_item in self._staged_items:
             self._scene.removeItem(staged_item)
         self._staged_items.clear()

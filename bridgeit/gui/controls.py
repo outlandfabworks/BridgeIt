@@ -184,6 +184,15 @@ class ControlsPanel(QWidget):
             min_contour_area=float(self._area_spin.value()),
         )
 
+    def set_controls_enabled(self, enabled: bool) -> None:
+        """Enable or disable all user-adjustable input controls."""
+        for w in (
+            self._bridge_spin, self._bridge_slider,
+            self._smooth_spin, self._smooth_slider,
+            self._area_spin,   self._area_slider,
+        ):
+            w.setEnabled(enabled)
+
     def update_info(
         self,
         islands: int,
