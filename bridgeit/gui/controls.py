@@ -144,10 +144,22 @@ class ControlsPanel(QWidget):
         info_card, info_inner = self._make_card("ANALYSIS INFO")
         self._info_card = info_card   # kept for apply_theme()
 
-        self._info_islands = self._info_row("Islands detected", "—")
-        self._info_bridges = self._info_row("Bridges added", "—")
-        self._info_paths   = self._info_row("Total paths", "—")
-        self._info_time    = self._info_row("Processing time", "—")
+        self._info_islands = self._info_row(
+            "Islands detected", "—",
+            "Closed shapes found in the image — each one needs bridges to stay attached"
+        )
+        self._info_bridges = self._info_row(
+            "Bridges added", "—",
+            "Physical tabs connecting islands to the surrounding sheet so they don't fall out when cut"
+        )
+        self._info_paths   = self._info_row(
+            "Total paths", "—",
+            "Total number of cut paths exported in the SVG (islands + bridge outlines)"
+        )
+        self._info_time    = self._info_row(
+            "Processing time", "—",
+            "Time taken to remove background, trace contours, and calculate bridges"
+        )
 
         for row_layout, _ in [self._info_islands, self._info_bridges,
                                self._info_paths, self._info_time]:
@@ -425,11 +437,13 @@ class ControlsPanel(QWidget):
         return slider
 
     @staticmethod
-    def _info_row(label: str, value: str):
+    def _info_row(label: str, value: str, tooltip: str = ""):
         row = QHBoxLayout()
         lbl = QLabel(label)
         lbl.setProperty("muted", True)
         lbl.setStyleSheet("font-size: 11px;")
+        if tooltip:
+            lbl.setToolTip(tooltip)
         val = QLabel(value)
         # Keep font-weight inline (not a colour, safe to bake in)
         val.setStyleSheet("font-size: 11px; font-weight: 600;")

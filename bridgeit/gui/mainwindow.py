@@ -20,7 +20,7 @@ from typing import Optional
 
 from PIL import Image
 from PyQt6.QtCore import QObject, QThread, QTimer, Qt, QSize, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QAction, QColor, QFont, QPalette
+from PyQt6.QtGui import QAction, QColor, QFont, QKeySequence, QPalette, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -178,6 +178,12 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._apply_theme()
+
+        # Global keyboard shortcuts
+        QShortcut(QKeySequence("Ctrl+S"), self).activated.connect(self._on_export_clicked)
+        QShortcut(QKeySequence("Ctrl+O"), self).activated.connect(self._on_open_clicked)
+        QShortcut(QKeySequence("B"), self).activated.connect(self._on_toggle_bridge_mode)
+
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
         self.setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
         self.resize(1280, 780)
@@ -310,7 +316,7 @@ class MainWindow(QMainWindow):
         self._btn_open.clicked.connect(self._on_open_clicked)
         hlay.addWidget(self._btn_open)
 
-        self._btn_export = self._header_btn("export", "Export SVG", primary=True)
+        self._btn_export = self._header_btn("export", "Export SVG  (Ctrl+S)", primary=True)
         self._btn_export.setEnabled(False)
         self._btn_export.clicked.connect(self._on_export_clicked)
         hlay.addWidget(self._btn_export)
@@ -338,7 +344,7 @@ class MainWindow(QMainWindow):
         self._btn_delete.clicked.connect(self._on_delete_selected)
         hlay.addWidget(self._btn_delete)
 
-        self._btn_add_bridge = self._header_btn("bridge", "Add Bridge  (draw a bridge between paths)")
+        self._btn_add_bridge = self._header_btn("bridge", "Add Bridge  (B)")
         self._btn_add_bridge.setEnabled(False)
         self._btn_add_bridge.setCheckable(True)
         self._btn_add_bridge.clicked.connect(self._on_toggle_bridge_mode)
@@ -662,6 +668,13 @@ class MainWindow(QMainWindow):
         Shows the raw (un-processed) image immediately so the user has something
         to look at while the pipeline runs in the background.
         """
+        # Reset canvas-dependent buttons so stale results from a previous image
+        # can't be acted on while the new pipeline run is in progress.
+        self._btn_export.setEnabled(False)
+        self._btn_view_svg.setEnabled(False)
+        self._btn_delete.setEnabled(False)
+        self._btn_add_bridge.setEnabled(False)
+
         # Show the original file right away — don't wait for background removal
         try:
             from PIL import Image as _Image
@@ -827,6 +840,11 @@ class MainWindow(QMainWindow):
         layout.setSpacing(0)
 
         sections = [
+            ("GLOBAL", [
+                ("Ctrl+O",                "Open image file"),
+                ("Ctrl+S",                "Export SVG"),
+                ("B",                     "Toggle bridge mode"),
+            ]),
             ("NAVIGATION", [
                 ("Scroll wheel",          "Zoom in / out"),
                 ("Middle-click drag",     "Pan canvas"),

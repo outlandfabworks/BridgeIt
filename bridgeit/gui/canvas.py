@@ -194,12 +194,14 @@ class _PathItem(QGraphicsPathItem):
         return self._sel
 
     def hoverEnterEvent(self, event) -> None:
-        """Show purple highlight when the cursor moves over this path."""
+        """Show purple highlight and pointer cursor when hovering over this path."""
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         if not self._sel:   # don't override the amber selection colour
             self.setPen(QPen(_COL_HOVER, _W_NORMAL))
 
     def hoverLeaveEvent(self, event) -> None:
-        """Restore normal/selected colour when cursor leaves."""
+        """Restore normal/selected colour and cursor when cursor leaves."""
+        self.unsetCursor()
         self._refresh_pen()
 
 
@@ -261,10 +263,12 @@ class _StagedBridgeItem(QGraphicsPathItem):
         return self._sel
 
     def hoverEnterEvent(self, event) -> None:
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         if not self._sel:
             self.setPen(QPen(_COL_HOVER, _W_NORMAL))
 
     def hoverLeaveEvent(self, event) -> None:
+        self.unsetCursor()
         self._refresh_pen()
 
 
@@ -326,10 +330,12 @@ class _ConfirmedBridgeItem(QGraphicsPathItem):
         return self._sel
 
     def hoverEnterEvent(self, event) -> None:
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         if not self._sel:
             self.setPen(QPen(_COL_HOVER, _W_NORMAL))
 
     def hoverLeaveEvent(self, event) -> None:
+        self.unsetCursor()
         self._refresh_pen()
 
 
