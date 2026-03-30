@@ -409,12 +409,32 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _make_btn_icon(icon_name: str, icon_color: str, t: dict):
-        """Build a QIcon with Normal and Disabled pixmaps so Qt shows a dim icon when disabled."""
-        from bridgeit.gui.icons import make_icon
-        from PyQt6.QtGui import QIcon
+        """Build a QIcon with Normal and Disabled pixmaps so Qt shows a dim icon when disabled.
+
+        Renders the SVG directly to QPixmap twice (full opacity for normal, 30% for
+        disabled) rather than calling QIcon.pixmap() which can cause heap corruption
+        in some Qt builds when called on a freshly-created QIcon.
+        """
+        from bridgeit.gui.icons import _ICONS
+        from PyQt6.QtCore import QByteArray, Qt
+        from PyQt6.QtSvg import QSvgRenderer
+        from PyQt6.QtGui import QIcon, QPainter, QPixmap
+
+        def _render(color: str, opacity: float = 1.0) -> QPixmap:
+            svg = _ICONS[icon_name].replace("COLOR", color)
+            renderer = QSvgRenderer(QByteArray(svg.encode("utf-8")))
+            pix = QPixmap(20, 20)
+            pix.fill(Qt.GlobalColor.transparent)
+            p = QPainter(pix)
+            if opacity < 1.0:
+                p.setOpacity(opacity)
+            renderer.render(p)
+            p.end()
+            return pix
+
         icon = QIcon()
-        icon.addPixmap(make_icon(icon_name, icon_color, 20).pixmap(20, 20), QIcon.Mode.Normal)
-        icon.addPixmap(make_icon(icon_name, t["border"], 20).pixmap(20, 20), QIcon.Mode.Disabled)
+        icon.addPixmap(_render(icon_color), QIcon.Mode.Normal)
+        icon.addPixmap(_render(icon_color, opacity=0.3), QIcon.Mode.Disabled)
         return icon
 
     def _header_btn(self, icon_name: str, tooltip: str, primary: bool = False) -> QPushButton:
