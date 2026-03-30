@@ -750,7 +750,8 @@ class MainWindow(QMainWindow):
         try:
             from PIL import Image as _Image
             orig = _Image.open(path)
-            self._source_image = orig  # store for erase mode colour sampling
+            orig.load()  # force full decode before storing
+            self._source_image = orig.copy()
             self._preview.show_image_from_pil(orig)
             self._btn_view_image.setEnabled(True)
         except Exception:
@@ -1295,10 +1296,10 @@ class MainWindow(QMainWindow):
             "Click more areas or click button to clear and exit."
         )
         self._set_status(f"Erase: sampled #{r:02x}{g:02x}{b:02x} — re-running pipeline…")
-        # Re-run pipeline with the updated erase colours
-        src = self._last_result.source_path if self._last_result else None
-        if src:
-            self._run_pipeline(source=src, preview_only=False)
+        # Re-run pipeline with the updated erase colours — pass the already-loaded
+        # PIL image directly so the background thread never touches the file on disk
+        if self._source_image is not None:
+            self._run_pipeline(source=self._source_image, preview_only=False)
 
     # ------------------------------------------------------------------
     # Helpers

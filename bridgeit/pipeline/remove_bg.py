@@ -96,10 +96,6 @@ def color_erase_removal(
 
     alpha_u8 = alpha.astype(np.uint8)
 
-    # Clean up small isolated specks left by the colour mask
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    alpha_u8 = cv2.morphologyEx(alpha_u8, cv2.MORPH_OPEN, kernel, iterations=1)
-
     rgba = np.dstack([rgb.astype(np.uint8), alpha_u8])
     return Image.fromarray(rgba, "RGBA")
 
