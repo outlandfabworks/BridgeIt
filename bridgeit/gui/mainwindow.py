@@ -135,8 +135,35 @@ class _PipelineWorker(QObject):
                 # Fast re-run: skip background removal, reuse cached nobg_image
                 result = self._runner.run_to_preview(self._nobg_image)
             else:
-                # Full run: all five pipeline stages including background removal
-                result = self._runner.run(self._source)
+                # Full run: execute in a child process so cv2 never shares Qt's
+                # heap.  cv2 corrupts glibc malloc when called from a QThread on
+                # some Qt/OpenCV builds; an isolated process avoids this entirely.
+                import multiprocessing as _mp
+                from bridgeit.pipeline._subprocess_worker import run_pipeline as _target
+
+                ctx = _mp.get_context("spawn")
+                q = ctx.Queue()
+                p = ctx.Process(
+                    target=_target,
+                    args=(q, self._source, self._runner.settings),
+                )
+                p.start()
+
+                # Poll the queue so we can detect if the child dies unexpectedly
+                result_tuple = None
+                while result_tuple is None:
+                    try:
+                        result_tuple = q.get(timeout=5)
+                    except Exception:  # queue.Empty on timeout
+                        if not p.is_alive():
+                            raise RuntimeError("Pipeline process terminated unexpectedly")
+
+                p.join(timeout=5)
+                tag, value = result_tuple
+                if tag == "err":
+                    raise RuntimeError(value)
+                result = value
+
             self.finished.emit(result)   # delivers result back to the main thread
         except Exception as exc:
             self.error.emit(str(exc))    # delivers error message back to the main thread
@@ -1122,13 +1149,17 @@ class MainWindow(QMainWindow):
         settings.erase_colors = list(self._erase_colors)
 
         # Create a fresh PipelineRunner with the current settings.
-        # The on_progress lambda updates the status bar at each stage.
+        # on_progress only fires for preview-only (fast) re-runs; full pipeline
+        # runs happen in a child process where this callback cannot reach the UI.
         runner = PipelineRunner(
             settings=settings,
             on_progress=lambda stage, msg: self._set_status(
                 f"{msg}  ({_STAGE_NUM[stage]}/4)"
             ),
         )
+
+        if not preview_only:
+            self._set_status("Processing image…")
 
         # Create the worker object (not a thread itself — it just holds the logic)
         self._worker = _PipelineWorker(
