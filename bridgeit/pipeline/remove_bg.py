@@ -78,7 +78,6 @@ def color_erase_removal(
     Returns:
         RGBA image with matching background pixels made transparent.
     """
-    import cv2
     rgb = np.array(img.convert("RGB"), dtype=np.float32)
     h, w = rgb.shape[:2]
 

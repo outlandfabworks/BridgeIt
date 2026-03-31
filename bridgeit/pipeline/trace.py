@@ -63,29 +63,37 @@ def _extract_alpha(img: Image.Image) -> np.ndarray:
 
     Applies a Gaussian blur before re-thresholding so that the pixel-grid
     staircase on diagonal edges is smoothed out, producing cleaner contours.
+
+    Uses PIL + numpy only (no cv2 morphologyEx) so this is safe to call
+    from a background QThread — cv2.morphologyEx corrupts the heap when
+    invoked from non-main threads on some Qt/OpenCV builds.
     """
+    from PIL import ImageFilter as _IF
+
     # PIL's split() returns separate R, G, B, A channels.
     # Index [3] is the alpha channel — 0 = transparent, 255 = opaque.
     alpha = np.array(img.split()[3])          # 0-255
 
-    # Threshold: any pixel with alpha > 10 becomes white (255),
-    # fully transparent pixels become black (0).
-    # This gives us a hard foreground/background mask.
-    _, binary = cv2.threshold(alpha, 10, 255, cv2.THRESH_BINARY)
+    # Threshold: any pixel with alpha > 10 → white (255), else black (0).
+    binary = np.where(alpha > 10, np.uint8(255), np.uint8(0))
 
-    # Gaussian blur softens the staircase edges that come from pixel-perfect
-    # alpha channels, then we threshold again to get a clean binary result.
-    blurred = cv2.GaussianBlur(binary, (7, 7), 2.0)
-    _, binary = cv2.threshold(blurred, 127, 255, cv2.THRESH_BINARY)
+    # Gaussian blur softens staircase edges, then re-threshold for a clean mask.
+    pil = Image.fromarray(binary, "L")
+    pil = pil.filter(_IF.GaussianBlur(radius=2))
+    binary = np.where(np.array(pil) > 127, np.uint8(255), np.uint8(0))
 
-    # Morphological operations clean up the mask:
-    # MORPH_CLOSE fills tiny holes inside the foreground shape.
-    # MORPH_OPEN  removes tiny isolated specks outside the shape.
-    # An ellipse kernel gives smoother results than a square one.
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=2)
-    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
-    return binary
+    # Morphological cleanup via PIL (thread-safe; equivalent to cv2 morphologyEx):
+    # MORPH_CLOSE (dilate then erode) fills tiny holes inside shapes.
+    # MORPH_OPEN  (erode then dilate) removes tiny isolated specks.
+    pil = Image.fromarray(binary, "L")
+    for _ in range(2):                       # close iterations=2
+        pil = pil.filter(_IF.MaxFilter(3))   #   dilate
+    for _ in range(2):
+        pil = pil.filter(_IF.MinFilter(3))   #   erode
+    pil = pil.filter(_IF.MinFilter(3))       # open  iterations=1
+    pil = pil.filter(_IF.MaxFilter(3))       #   erode then dilate
+
+    return np.array(pil)
 
 
 def _find_contours(binary: np.ndarray, min_area: float) -> List[np.ndarray]:
