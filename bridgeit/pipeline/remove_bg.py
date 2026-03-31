@@ -98,10 +98,11 @@ def color_erase_removal(
     # Clean up speckle with a pure-PIL blur+threshold.
     # The soft fade creates noisy gradients at colour boundaries that generate
     # thousands of tiny contour fragments, hanging the trace stage.
-    # Blurring merges nearby fragments; hard-thresholding gives clean edges.
+    # A larger blur radius (4px) also smooths the mask boundary itself,
+    # reducing jagged edges in the resulting vector paths.
     from PIL import ImageFilter as _IF
     alpha_pil = Image.fromarray(alpha_u8, "L")
-    alpha_pil = alpha_pil.filter(_IF.GaussianBlur(radius=2))
+    alpha_pil = alpha_pil.filter(_IF.GaussianBlur(radius=4))
     alpha_u8 = np.where(np.array(alpha_pil) > 127, 255, 0).astype(np.uint8)
 
     rgba = np.dstack([rgb.astype(np.uint8), alpha_u8])

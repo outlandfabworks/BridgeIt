@@ -1305,8 +1305,10 @@ class MainWindow(QMainWindow):
             if self._nobg_image is not None:
                 self._preview.show_image_from_pil(self._nobg_image)
             # Re-run so the pipeline reverts to auto-removal
-            self._run_pipeline(source=self._last_result.source_path if self._last_result else None,
-                               preview_only=False)
+            src = self._source_image if self._source_image is not None \
+                else (self._last_result.source_path if self._last_result else None)
+            if src is not None:
+                self._run_pipeline(source=src, preview_only=False)
 
     @pyqtSlot(int, int, int)
     def _on_color_sampled(self, r: int, g: int, b: int) -> None:
