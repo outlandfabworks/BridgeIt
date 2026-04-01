@@ -487,9 +487,6 @@ class InteractiveCanvas(QGraphicsView):
         # ── Bridge state ──────────────────────────────────────────────────
         # All confirmed bridge items (both auto-generated and manual).
         self._bridge_items: List[_AnyBridgeItem] = []
-        # Indices of auto bridges the user deleted (so we can preserve the deletion
-        # across canvas reloads triggered by settings changes).
-        self._deleted_auto_bridges: Set[int] = set()
         # Manual bridges that have been confirmed: list of (pt1, pt2, width_px) tuples.
         self._manual_bridges: List[Tuple] = []
 
@@ -499,7 +496,7 @@ class InteractiveCanvas(QGraphicsView):
         self._staged_items: List[_StagedBridgeItem] = []
 
         # ── Undo / redo stacks ────────────────────────────────────────────
-        # Each entry is a snapshot: (excluded, manual_bridges, deleted_auto_bridges)
+        # Each entry is a snapshot: (excluded, manual_bridges)
         self._undo_stack: List[Tuple] = []
         self._redo_stack: List[Tuple] = []
 
@@ -553,10 +550,9 @@ class InteractiveCanvas(QGraphicsView):
             return
         # Save current state to redo stack before restoring
         self._redo_stack.append(self._snapshot())
-        excluded, manual, deleted_auto = self._undo_stack.pop()
+        excluded, manual = self._undo_stack.pop()
         self._excluded = excluded
         self._manual_bridges = list(manual)
-        self._deleted_auto_bridges = deleted_auto
         self.paths_modified.emit()
 
     def redo(self) -> None:
@@ -564,10 +560,9 @@ class InteractiveCanvas(QGraphicsView):
         if not self._redo_stack:
             return
         self._undo_stack.append(self._snapshot())
-        excluded, manual, deleted_auto = self._redo_stack.pop()
+        excluded, manual = self._redo_stack.pop()
         self._excluded = excluded
         self._manual_bridges = list(manual)
-        self._deleted_auto_bridges = deleted_auto
         self.paths_modified.emit()
 
     def _snapshot(self) -> Tuple:
@@ -575,7 +570,6 @@ class InteractiveCanvas(QGraphicsView):
         return (
             set(self._excluded),
             list(self._manual_bridges),
-            set(self._deleted_auto_bridges),
         )
 
     def _push_undo(self) -> None:
@@ -595,10 +589,8 @@ class InteractiveCanvas(QGraphicsView):
     def load(
         self,
         paths: List[Path2D],
-        auto_bridges: List[Bridge],
         excluded: Optional[Set[int]] = None,
         manual_bridges: Optional[List[Tuple]] = None,
-        deleted_auto_bridges: Optional[Set[int]] = None,
     ) -> None:
         """Rebuild the canvas from a fresh pipeline result.
 
@@ -606,11 +598,12 @@ class InteractiveCanvas(QGraphicsView):
         Clears the old scene completely and redraws everything from scratch.
 
         Args:
-            paths:                All cut paths from the pipeline.
-            auto_bridges:         Auto-generated bridges from bridge.py.
-            excluded:             Path indices to hide (user-deleted paths).
-            manual_bridges:       Confirmed manual bridges as (pt1, pt2, width_px) tuples.
-            deleted_auto_bridges: Indices of auto bridges the user deleted.
+            paths:          Pre-bridge cut paths from the pipeline (result.paths).
+            excluded:       Path indices to hide (user-deleted paths).
+            manual_bridges: Confirmed bridges as (pt1, pt2, width_px) tuples.
+                            Both user-drawn and confirmed auto-suggested bridges
+                            are stored here and applied via apply_manual_bridges()
+                            at export time.
         """
         # Wipe everything from the scene and clear all our tracking lists
         self._scene.clear()
@@ -629,8 +622,6 @@ class InteractiveCanvas(QGraphicsView):
             self._excluded = set(excluded)
         if manual_bridges is not None:
             self._manual_bridges = list(manual_bridges)
-        if deleted_auto_bridges is not None:
-            self._deleted_auto_bridges = set(deleted_auto_bridges)
 
         for i, path in enumerate(paths):
             if i in self._excluded or len(path) < 2:
@@ -638,13 +629,6 @@ class InteractiveCanvas(QGraphicsView):
             item = _PathItem(path, i)
             self._scene.addItem(item)
             self._items.append(item)
-
-        for i, b in enumerate(auto_bridges):
-            if i in self._deleted_auto_bridges:
-                continue
-            marker = _BridgeMarkerItem(b.island_pt, b.target_pt, "auto", i)
-            self._scene.addItem(marker)
-            self._bridge_items.append(marker)
 
         for i, bridge_data in enumerate(self._manual_bridges):
             pt1, pt2 = bridge_data[0], bridge_data[1]
@@ -678,8 +662,34 @@ class InteractiveCanvas(QGraphicsView):
     def get_manual_bridges(self) -> List[Tuple]:
         return list(self._manual_bridges)
 
-    def get_deleted_auto_bridges(self) -> Set[int]:
-        return set(self._deleted_auto_bridges)
+    def load_auto_bridge_suggestions(self, bridges: List[Bridge]) -> None:
+        """Load pipeline-suggested bridges as staged (pending) items.
+
+        Replaces any existing staged bridges with the new suggestions.
+        Each Bridge's island_pt/target_pt pair becomes a _StagedBridgeItem
+        so the user can delete unwanted ones before confirming.
+
+        After this call the canvas is typically switched to BRIDGE mode so
+        the user can press Enter (or click Confirm) to accept all remaining
+        staged bridges.
+        """
+        # Discard any pre-existing staged items first
+        for item in self._staged_items:
+            self._scene.removeItem(item)
+        self._staged_items.clear()
+        self._staged_data.clear()
+
+        for bridge in bridges:
+            pt1 = bridge.island_pt
+            pt2 = bridge.target_pt
+            idx = len(self._staged_data)
+            self._staged_data.append((pt1, pt2))
+            item = _StagedBridgeItem(pt1, pt2, idx, self._bridge_width_px)
+            self._scene.addItem(item)
+            self._staged_items.append(item)
+
+        if self._staged_data:
+            self._emit_mode_hint()
 
     def delete_selected(self) -> None:
         """Delete all currently selected items.
@@ -687,7 +697,7 @@ class InteractiveCanvas(QGraphicsView):
         Three categories of items can be deleted:
           1. Staged bridges (unconfirmed) — removed immediately, no pipeline reload.
           2. Paths — added to _excluded; triggers a canvas reload via paths_modified.
-          3. Confirmed bridges — removed from _manual_bridges or _deleted_auto_bridges;
+          3. Confirmed bridges — removed from _manual_bridges;
              triggers a canvas reload via paths_modified.
         """
         self._push_undo()
@@ -726,10 +736,6 @@ class InteractiveCanvas(QGraphicsView):
                         for other in self._bridge_items:
                             if other.bridge_type == "manual" and other.bridge_index > idx:
                                 other.bridge_index -= 1
-                elif bitem.bridge_type == "auto":
-                    # Auto bridges can't be fully removed from the pipeline result,
-                    # so we track deleted ones by index and skip them on next reload
-                    self._deleted_auto_bridges.add(bitem.bridge_index)
                 changed = True
 
         if changed:

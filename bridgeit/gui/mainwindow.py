@@ -192,8 +192,7 @@ class MainWindow(QMainWindow):
 
         # ── Canvas edit state (synced to/from the canvas widget) ──────────
         self._excluded_paths: set = set()        # path indices hidden by the user
-        self._manual_bridges: list = []          # confirmed manual bridge data
-        self._deleted_auto_bridges: set = set()  # auto bridge indices deleted by user
+        self._manual_bridges: list = []          # all confirmed bridges (auto + manual)
 
         # ── Bridge toolbar state ──────────────────────────────────────────
         # True when there are staged bridges and the toolbar button acts as "Confirm"
@@ -402,6 +401,14 @@ class MainWindow(QMainWindow):
         self._btn_add_bridge.setCheckable(True)
         self._btn_add_bridge.clicked.connect(self._on_toggle_bridge_mode)
         hlay.addWidget(self._btn_add_bridge)
+
+        self._btn_auto_bridge = self._header_btn(
+            "auto_bridge",
+            "Auto Bridge  — suggest bridge placements for all islands",
+        )
+        self._btn_auto_bridge.setEnabled(False)
+        self._btn_auto_bridge.clicked.connect(self._on_auto_bridge)
+        hlay.addWidget(self._btn_auto_bridge)
 
         hlay.addSpacing(4)
         hlay.addWidget(self._header_sep())
@@ -766,6 +773,7 @@ class MainWindow(QMainWindow):
         self._btn_view_svg.setEnabled(False)
         self._btn_delete.setEnabled(False)
         self._btn_add_bridge.setEnabled(False)
+        self._btn_auto_bridge.setEnabled(False)
         self._btn_erase.setEnabled(False)
         self._btn_erase.setChecked(False)
         self._preview.img_preview.set_erase_mode(False)
@@ -863,8 +871,9 @@ class MainWindow(QMainWindow):
             bridge_px = mm_to_px(self._controls.get_settings().bridge_width_mm)
 
             # Build the final path list:
-            # 1. Take all pipeline paths, skipping any the user deleted
-            active_paths = [p for i, p in enumerate(br.paths) if i not in self._excluded_paths]
+            # 1. Start from pre-bridge paths; apply all confirmed bridges via apply_manual_bridges
+            active_paths = [p for i, p in enumerate(self._last_result.paths)
+                            if i not in self._excluded_paths]
 
             # 2. Splice manual bridges into their source paths.
             # Unlike the old approach (appending a separate rectangle), this uses
@@ -1051,7 +1060,7 @@ class MainWindow(QMainWindow):
         reloads the canvas from the pipeline result so all items are redrawn
         cleanly with the latest edits applied.
         """
-        if not self._last_result or not self._last_result.bridge_result:
+        if not self._last_result or not self._last_result.paths:
             return
 
         # Leave bridge-editing mode (the layout of bridges has changed)
@@ -1060,20 +1069,24 @@ class MainWindow(QMainWindow):
 
         # Sync our local state from the canvas before reloading
         canvas = self._preview.canvas
-        self._excluded_paths        = canvas.get_excluded()
-        self._manual_bridges        = canvas.get_manual_bridges()
-        self._deleted_auto_bridges  = canvas.get_deleted_auto_bridges()
+        self._excluded_paths = canvas.get_excluded()
+        self._manual_bridges = canvas.get_manual_bridges()
 
-        # Reload the canvas — this redraws all items from the pipeline result,
-        # applying the updated excluded/manual/deleted state
-        br = self._last_result.bridge_result
+        # Reload the canvas — redraws all items from the pre-bridge paths,
+        # with confirmed bridges applied at export time via apply_manual_bridges
         canvas.load(
-            br.paths,
-            br.bridges,
+            self._last_result.paths,
             excluded=self._excluded_paths,
             manual_bridges=self._manual_bridges,
-            deleted_auto_bridges=self._deleted_auto_bridges,
         )
+
+        # Update info card to reflect confirmed bridge count
+        if self._last_result:
+            islands = len(self._last_result.analysis.islands) if self._last_result.analysis else 0
+            paths   = len([i for i in range(len(self._last_result.paths or []))
+                           if i not in self._excluded_paths])
+            self._controls.update_info(islands, len(self._manual_bridges),
+                                       paths, self._last_result.elapsed_seconds)
 
     @pyqtSlot(str)
     def _on_canvas_mode_changed(self, mode_str: str) -> None:
@@ -1214,21 +1227,19 @@ class MainWindow(QMainWindow):
         if result.bridge_result:
             if not on_canvas:
                 # This is a fresh image load — clear any edits from the previous image
-                self._excluded_paths       = set()
-                self._manual_bridges       = []
-                self._deleted_auto_bridges = set()
-            # Load the new paths and bridges into the canvas
+                self._excluded_paths = set()
+                self._manual_bridges = []
+            # Load pre-bridge paths — no bridges auto-applied; user triggers via Auto Bridge
             self._preview.canvas.load(
-                result.bridge_result.paths,
-                result.bridge_result.bridges,
+                result.paths,
                 excluded=self._excluded_paths,
                 manual_bridges=self._manual_bridges,
-                deleted_auto_bridges=self._deleted_auto_bridges,
             )
             # Enable toolbar buttons that require a loaded design
             self._btn_view_svg.setEnabled(True)
             self._btn_delete.setEnabled(True)
             self._btn_add_bridge.setEnabled(True)
+            self._btn_auto_bridge.setEnabled(True)
 
         # Switch to image view — but only if we're not already on the canvas.
         # This prevents the view from jumping away when the user tweaks a setting
@@ -1238,11 +1249,10 @@ class MainWindow(QMainWindow):
             if not on_canvas:
                 self._preview.show_image_from_pil(self._nobg_image)
 
-        # Update the info card with stats from this run
+        # Update the info card — bridges count shows confirmed bridges only (starts at 0)
         islands = len(result.analysis.islands) if result.analysis else 0
-        bridges = len(result.bridge_result.bridges) if result.bridge_result else 0
-        paths   = len(result.bridge_result.paths)   if result.bridge_result else 0
-        self._controls.update_info(islands, bridges, paths, result.elapsed_seconds)
+        paths   = len(result.paths) if result.paths else 0
+        self._controls.update_info(islands, len(self._manual_bridges), paths, result.elapsed_seconds)
 
         self._btn_export.setEnabled(True)
         self._btn_erase.setEnabled(True)
@@ -1272,6 +1282,34 @@ class MainWindow(QMainWindow):
     @pyqtSlot()
     def _on_fit_view(self) -> None:
         self._preview.canvas.fit_view()
+
+    @pyqtSlot()
+    def _on_auto_bridge(self) -> None:
+        """Load pipeline-suggested bridges as staged items for review.
+
+        The pipeline already computed bridge suggestions (bridge_result.bridges).
+        This method pushes them into the canvas as staged overlays so the user
+        can delete unwanted ones before confirming the rest.
+        """
+        if not self._last_result or not self._last_result.bridge_result:
+            return
+        canvas = self._preview.canvas
+        suggestions = self._last_result.bridge_result.bridges
+        if not suggestions:
+            self._set_status("No islands detected — no bridges to suggest")
+            return
+        from bridgeit.pipeline.bridge import mm_to_px
+        canvas.bridge_width_px = mm_to_px(self._controls.get_settings().bridge_width_mm)
+        canvas.load_auto_bridge_suggestions(suggestions)
+        canvas.set_mode(CanvasMode.BRIDGE)
+        self._btn_add_bridge.setChecked(True)
+        self._preview.show_canvas()
+        canvas.setFocus()
+        n = len(suggestions)
+        self._set_status(
+            f"{n} bridge suggestion{'s' if n != 1 else ''} — "
+            "delete unwanted ones, then press Enter or click Confirm to accept"
+        )
 
     @pyqtSlot()
     def _on_toggle_erase_mode(self) -> None:

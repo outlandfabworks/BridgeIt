@@ -125,6 +125,15 @@ _ICONS: dict[str, str] = {
       <line x1="2" y1="16.5" x2="18" y2="16.5"
             stroke="COLOR" stroke-width="1.5" stroke-linecap="round"/>
     </svg>""",
+
+    # Auto Bridge — magic wand with sparkle star at tip
+    "auto_bridge": """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none">
+      <line x1="3" y1="17" x2="11.5" y2="8.5"
+            stroke="COLOR" stroke-width="1.5" stroke-linecap="round"/>
+      <path d="M13 3 L14 6 L17 7 L14 8 L13 11 L12 8 L9 7 L12 6 Z"
+            stroke="COLOR" stroke-width="1.2" stroke-linejoin="round"/>
+    </svg>""",
 }
 
 # ---------------------------------------------------------------------------
