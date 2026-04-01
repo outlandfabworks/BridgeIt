@@ -1258,7 +1258,8 @@ class MainWindow(QMainWindow):
         self._btn_erase.setEnabled(True)
         self._controls.set_controls_enabled(True)
         self._set_status(
-            f"Done — {islands} island(s), {bridges} bridge(s) in {result.elapsed_seconds:.2f}s",
+            f"Done — {islands} island(s) detected in {result.elapsed_seconds:.2f}s  "
+            "· click Auto Bridge to suggest placements",
             success=True,
         )
 
