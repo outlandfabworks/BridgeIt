@@ -78,20 +78,21 @@ def _extract_alpha(img: Image.Image) -> np.ndarray:
     binary = np.where(alpha > 10, np.uint8(255), np.uint8(0))
 
     # Gaussian blur softens staircase edges, then re-threshold for a clean mask.
+    # Threshold at 200 (not 127) so the path falls on the inner edge of the blur
+    # zone — this keeps paths tight to the original artwork rather than expanded.
     pil = Image.fromarray(binary, "L")
     pil = pil.filter(_IF.GaussianBlur(radius=2))
-    binary = np.where(np.array(pil) > 127, np.uint8(255), np.uint8(0))
+    binary = np.where(np.array(pil) > 200, np.uint8(255), np.uint8(0))
 
     # Morphological cleanup via PIL (thread-safe; equivalent to cv2 morphologyEx):
     # MORPH_CLOSE (dilate then erode) fills tiny holes inside shapes.
     # MORPH_OPEN  (erode then dilate) removes tiny isolated specks.
+    # One close iteration is enough — two can visibly expand thin strokes.
     pil = Image.fromarray(binary, "L")
-    for _ in range(2):                       # close iterations=2
-        pil = pil.filter(_IF.MaxFilter(3))   #   dilate
-    for _ in range(2):
-        pil = pil.filter(_IF.MinFilter(3))   #   erode
-    pil = pil.filter(_IF.MinFilter(3))       # open  iterations=1
-    pil = pil.filter(_IF.MaxFilter(3))       #   erode then dilate
+    pil = pil.filter(_IF.MaxFilter(3))           # close iterations=1
+    pil = pil.filter(_IF.MinFilter(3))           #   dilate then erode
+    pil = pil.filter(_IF.MinFilter(3))           # open  iterations=1
+    pil = pil.filter(_IF.MaxFilter(3))           #   erode then dilate
 
     return np.array(pil)
 

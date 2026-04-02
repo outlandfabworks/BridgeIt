@@ -18,7 +18,7 @@ DEFAULT_CONTOUR_SMOOTHING = 2.0       # epsilon factor for approxPolyDP
 
 # Any detected shape smaller than this area (in square pixels) is ignored
 # as noise — dust, JPEG artefacts, etc.
-DEFAULT_MIN_CONTOUR_AREA = 100        # pixels² — ignore noise
+DEFAULT_MIN_CONTOUR_AREA = 50         # pixels² — ignore noise
 
 # The assumed screen resolution used when converting millimetres to pixels.
 # 96 DPI is the standard for most desktop monitors.
