@@ -26,6 +26,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QFrame,
     QHBoxLayout,
+    QMessageBox,
     QVBoxLayout,
     QLabel,
     QMainWindow,
@@ -61,33 +62,6 @@ _STAGE_NUM: dict = {
     Stage.BRIDGE:    4,
     Stage.EXPORT:    4,   # export is bundled with bridge step visually
 }
-
-
-def _bridge_rect(
-    pt1: tuple,
-    pt2: tuple,
-    width_px: float,
-):
-    """Return a closed rectangle path representing a manual bridge.
-
-    Used by _on_export_clicked() to bake manual bridge rectangles into the
-    exported SVG as actual cut paths.  This is a duplicate of the same logic
-    in canvas.py — kept here so the export code doesn't depend on canvas internals.
-    """
-    import math
-    dx = pt2[0] - pt1[0]
-    dy = pt2[1] - pt1[1]
-    length = math.hypot(dx, dy)
-    if length < 1e-6:
-        return None   # degenerate bridge — skip it
-    ux, uy = dx / length, dy / length   # unit vector along bridge direction
-    px, py = -uy, ux                    # perpendicular unit vector
-    half = width_px / 2
-    a = (pt1[0] + px*half, pt1[1] + py*half)
-    b = (pt1[0] - px*half, pt1[1] - py*half)
-    c = (pt2[0] - px*half, pt2[1] - py*half)
-    d = (pt2[0] + px*half, pt2[1] + py*half)
-    return [a, b, c, d, a]   # 5 points — last repeats first to close the shape
 
 
 # ---------------------------------------------------------------------------
@@ -128,45 +102,59 @@ class _PipelineWorker(QObject):
     def run(self) -> None:
         """Entry point called by the QThread when it starts.
 
-        @pyqtSlot() marks this as a Qt slot so it's called correctly across threads.
+        Both full runs and preview-only re-runs execute in a child process
+        so cv2 (trace_contours) never runs inside a QThread.  cv2 corrupts
+        glibc malloc when called from a QThread on some Qt/OpenCV builds;
+        an isolated subprocess avoids this entirely.
         """
         try:
-            if self._preview_only and self._nobg_image is not None:
-                # Fast re-run: skip background removal, reuse cached nobg_image
-                result = self._runner.run_to_preview(self._nobg_image)
-            else:
-                # Full run: execute in a child process so cv2 never shares Qt's
-                # heap.  cv2 corrupts glibc malloc when called from a QThread on
-                # some Qt/OpenCV builds; an isolated process avoids this entirely.
-                import multiprocessing as _mp
-                from bridgeit.pipeline._subprocess_worker import run_pipeline as _target
+            import multiprocessing as _mp
+            from bridgeit.pipeline._subprocess_worker import (
+                run_pipeline as _full_target,
+                run_preview as _preview_target,
+            )
 
-                ctx = _mp.get_context("spawn")
-                q = ctx.Queue()
+            ctx = _mp.get_context("spawn")
+            q = ctx.Queue()
+
+            if self._preview_only and self._nobg_image is not None:
                 p = ctx.Process(
-                    target=_target,
+                    target=_preview_target,
+                    args=(q, self._nobg_image, self._runner.settings),
+                )
+            else:
+                p = ctx.Process(
+                    target=_full_target,
                     args=(q, self._source, self._runner.settings),
                 )
-                p.start()
 
-                # Poll the queue so we can detect if the child dies unexpectedly
-                result_tuple = None
-                while result_tuple is None:
-                    try:
-                        result_tuple = q.get(timeout=5)
-                    except Exception:  # queue.Empty on timeout
-                        if not p.is_alive():
-                            raise RuntimeError("Pipeline process terminated unexpectedly")
+            p.start()
 
-                p.join(timeout=5)
-                tag, value = result_tuple
-                if tag == "err":
-                    raise RuntimeError(value)
-                result = value
+            # Poll the queue so we detect if the child dies unexpectedly
+            result_tuple = None
+            while result_tuple is None:
+                try:
+                    result_tuple = q.get(timeout=5)
+                except Exception:  # queue.Empty on timeout
+                    if not p.is_alive():
+                        raise RuntimeError("Pipeline process terminated unexpectedly")
 
-            self.finished.emit(result)   # delivers result back to the main thread
+            # Clean up child process — terminate first as fallback if it
+            # hasn't exited yet, then join to release OS resources
+            if p.is_alive():
+                p.terminate()
+            p.join(timeout=5)
+            if p.is_alive():
+                p.kill()   # last resort
+
+            tag, value = result_tuple
+            if tag == "err":
+                raise RuntimeError(value)
+            result = value
+
+            self.finished.emit(result)
         except Exception as exc:
-            self.error.emit(str(exc))    # delivers error message back to the main thread
+            self.error.emit(str(exc))
 
 
 # ---------------------------------------------------------------------------
@@ -783,14 +771,21 @@ class MainWindow(QMainWindow):
 
         # Show the original file right away — don't wait for background removal
         try:
+            import os as _os
+            _MAX_FILE_BYTES = 50 * 1024 * 1024  # 50 MB
+            if _os.path.getsize(path) > _MAX_FILE_BYTES:
+                self._set_status("File too large — please use an image under 50 MB", error=True)
+                return
             from PIL import Image as _Image
             orig = _Image.open(path)
             orig.load()  # force full decode before storing
             self._source_image = orig.copy()
             self._preview.show_image_from_pil(orig)
             self._btn_view_image.setEnabled(True)
-        except Exception:
+        except Exception as exc:
             self._source_image = None
+            self._set_status(f"Could not open image: {exc}", error=True)
+            return
         self._run_pipeline(source=path, preview_only=False)
 
     @pyqtSlot(object)
@@ -1172,7 +1167,19 @@ class MainWindow(QMainWindow):
         )
 
         if not preview_only:
-            self._set_status("Processing image…")
+            # Warn the user if rembg will need to download its AI model (~170 MB).
+            # This only applies when erase_colors is empty (auto bg removal path).
+            if not settings.erase_colors:
+                from bridgeit.pipeline.remove_bg import rembg_model_downloaded
+                if not rembg_model_downloaded():
+                    self._set_status(
+                        "First run: downloading AI background-removal model (~170 MB) "
+                        "— this may take several minutes…"
+                    )
+                else:
+                    self._set_status("Processing image…")
+            else:
+                self._set_status("Processing image…")
 
         # Create the worker object (not a thread itself — it just holds the logic)
         self._worker = _PipelineWorker(
@@ -1193,9 +1200,11 @@ class MainWindow(QMainWindow):
         # Worker finished → call our finished handler (back on main thread)
         self._worker.finished.connect(self._on_pipeline_finished)
         self._worker.error.connect(self._on_pipeline_error)
-        # After worker finishes (or errors), stop the thread cleanly
+        # After worker finishes (or errors), stop the thread and schedule cleanup
         self._worker.finished.connect(self._worker_thread.quit)
         self._worker.error.connect(self._worker_thread.quit)
+        self._worker_thread.finished.connect(self._worker_thread.deleteLater)
+        self._worker_thread.finished.connect(self._worker.deleteLater)
 
         self._set_busy(True)        # show progress bar, disable Open button
         self._worker_thread.start() # kick off the background thread
@@ -1212,7 +1221,7 @@ class MainWindow(QMainWindow):
         self._last_result = result
 
         if result.error:
-            self._set_status(f"Error: {result.error}", error=True)
+            self._show_pipeline_error(result.error)
             return
 
         # Cache the background-removed image so future preview re-runs don't
@@ -1270,7 +1279,22 @@ class MainWindow(QMainWindow):
     @pyqtSlot(str)
     def _on_pipeline_error(self, message: str) -> None:
         self._set_busy(False)
-        self._set_status(f"Error: {message}", error=True)
+        self._show_pipeline_error(message)
+
+    def _show_pipeline_error(self, message: str) -> None:
+        """Show a pipeline error in a QMessageBox with the full traceback in Details."""
+        self._set_busy(False)
+        # First line is the summary; everything else is traceback detail
+        lines = message.strip().splitlines()
+        summary = lines[0] if lines else "An unknown error occurred"
+        self._set_status(f"Error: {summary}", error=True)
+        dlg = QMessageBox(self)
+        dlg.setWindowTitle("Pipeline Error")
+        dlg.setIcon(QMessageBox.Icon.Critical)
+        dlg.setText(summary)
+        if len(lines) > 1:
+            dlg.setDetailedText(message)
+        dlg.exec()
 
     @pyqtSlot()
     def _on_undo(self) -> None:
@@ -1335,7 +1359,19 @@ class MainWindow(QMainWindow):
             self._btn_erase.setToolTip(tip)
             self._set_status("Erase mode: click on background areas to remove them")
         else:
-            # Exiting erase mode — clear colours, revert to auto bg removal
+            # Exiting erase mode — ask the user if they sampled any colours
+            if self._erase_colors:
+                answer = QMessageBox.question(
+                    self,
+                    "Exit Erase Mode",
+                    "Clear all sampled erase colours and revert to automatic background removal?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                    QMessageBox.StandardButton.Cancel,
+                )
+                if answer != QMessageBox.StandardButton.Yes:
+                    # User cancelled — stay in erase mode
+                    self._btn_erase.setChecked(True)
+                    return
             self._erase_colors = []
             self._preview.img_preview.set_erase_mode(False)
             self._btn_erase.setToolTip("Erase Background  — click to enter erase mode")

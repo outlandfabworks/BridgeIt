@@ -55,7 +55,6 @@ class DropZone(QWidget):
     # pyqtSignal is Qt's mechanism for sending notifications between objects.
     # file_dropped carries the dropped file path as a string.
     file_dropped = pyqtSignal(str)
-    open_clicked = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)

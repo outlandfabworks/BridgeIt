@@ -136,34 +136,25 @@ def make_preview_svg(result: BridgeResult) -> str:
                 ))
         dwg.add(bridge_group)
 
-    # svgwrite requires a filename to save, so we use a temporary file and
-    # immediately read it back as a string, then delete the temp file.
-    with tempfile.NamedTemporaryFile(suffix=".svg", delete=False) as tmp:
-        tmp_path = tmp.name
-    try:
+    # svgwrite requires a filename to save, so we use a TemporaryDirectory
+    # (auto-cleaned by the OS on normal exit and on most crash paths).
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = os.path.join(tmp_dir, "preview.svg")
         dwg.filename = tmp_path
         dwg.save(pretty=False)
         with open(tmp_path, "r", encoding="utf-8") as f:
             return f.read()
-    finally:
-        # Always clean up the temp file, even if reading it failed
-        if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
 
 
 def export_svg_string(result: BridgeResult) -> str:
     """Legacy helper — returns fabrication SVG as a string."""
     # This is a convenience wrapper used by the pipeline for in-memory SVG handling.
     # It writes to a temp file then reads it back, the same pattern as make_preview_svg.
-    with tempfile.NamedTemporaryFile(suffix=".svg", delete=False) as tmp:
-        tmp_path = tmp.name
-    try:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = os.path.join(tmp_dir, "export.svg")
         export_svg(result, tmp_path)
         with open(tmp_path, "r", encoding="utf-8") as f:
             return f.read()
-    finally:
-        if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
 
 
 def _path_to_svg_d(path: Path2D) -> str:

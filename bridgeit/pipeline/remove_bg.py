@@ -216,6 +216,22 @@ def _threshold_removal(img: Image.Image) -> Image.Image:
 
 
 # ---------------------------------------------------------------------------
+# Model presence check (called from the GUI before starting the pipeline)
+# ---------------------------------------------------------------------------
+
+def rembg_model_downloaded() -> bool:
+    """Return True if the U2Net ONNX model file is already on disk.
+
+    rembg downloads the model (~170 MB) on first use.  The GUI calls this
+    before starting the pipeline so it can warn the user if a long download
+    is about to happen.
+    """
+    import os
+    model_path = os.path.expanduser("~/.u2net/u2net.onnx")
+    return os.path.exists(model_path)
+
+
+# ---------------------------------------------------------------------------
 # Method 2: rembg AI removal (photos)
 # ---------------------------------------------------------------------------
 

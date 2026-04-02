@@ -88,7 +88,7 @@ def _run_cli(args: list[str]) -> None:
     parser.add_argument("-o", "--output", default=None, help="Output SVG path")
     parser.add_argument("--bridge-width", type=float, default=0.5, help="Bridge width in mm (default: 0.5)")
     parser.add_argument("--smoothing", type=float, default=2.0, help="Contour smoothing factor")
-    parser.add_argument("--min-area", type=float, default=100.0, help="Minimum contour area (px²)")
+    parser.add_argument("--min-area", type=float, default=50.0, help="Minimum contour area (px²)")
 
     # Parse the arguments list into a Namespace object with named attributes
     parsed = parser.parse_args(args)

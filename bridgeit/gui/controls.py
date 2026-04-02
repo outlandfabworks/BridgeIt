@@ -346,31 +346,6 @@ class ControlsPanel(QWidget):
         return card, outer
 
     @staticmethod
-    def _section_label(text: str) -> QWidget:
-        # Creates a compact section heading with a coloured accent bar on the left.
-        # Returns a QWidget (not a QLabel) so we can include the bar + text together.
-        t = current_theme()
-        container = QWidget()
-        container.setFixedHeight(18)
-        lay = QHBoxLayout(container)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(8)
-
-        # Small coloured rectangle acting as a visual accent bar
-        bar = QWidget()
-        bar.setFixedSize(3, 12)
-        bar.setStyleSheet(f"background: {t['accent']}; border-radius: 1px;")
-
-        lbl = QLabel(text)
-        lbl.setStyleSheet(
-            f"color: {t['text_muted']}; font-size: 10px; font-weight: 600; letter-spacing: 1.5px;"
-        )
-        lay.addWidget(bar)
-        lay.addWidget(lbl)
-        lay.addStretch()
-        return container
-
-    @staticmethod
     def _labeled_double_spin(
         label: str, unit: str, value: float,
         minimum: float, maximum: float, step: float, decimals: int,
