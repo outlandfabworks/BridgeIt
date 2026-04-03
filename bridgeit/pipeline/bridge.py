@@ -119,44 +119,53 @@ def _bridge_island(
     analysis: AnalysisResult,
     bridge_px: float,
 ) -> Optional[Bridge]:
-    """Find nearest target path and insert a bridge into the island path."""
-    # Convert the island polygon's outline to a Shapely LineString so we can
-    # use nearest_points() to find the closest point pair efficiently.
-    island_line = LineString(island.path)
+    """Find nearest target path and insert a bridge into the island path.
 
-    # Track the best (closest) connection point found so far
+    We use a two-step centroid-guided approach instead of raw outline-to-outline
+    nearest_points().  The raw approach often picks awkward corners; guiding via
+    the island centroid produces bridges that go straight across the natural gap:
+
+      Step 1 — Find the point on each candidate target nearest to the island
+               centroid.  This anchors the target side of the bridge near the
+               "facing" edge rather than an unrelated corner.
+      Step 2 — Find the point on the island outline nearest to that target point.
+               This gives the island side of the bridge, which now lines up with
+               the target anchor.
+
+    Whichever target produces the shortest step-2 distance wins.
+    """
+    island_line = LineString(island.path)
+    # Shapely centroid of the island polygon — used to guide target-side anchoring
+    centroid = island.polygon.centroid
+
     best_dist = math.inf
     best_island_pt: Optional[Tuple[float, float]] = None
     best_target_pt: Optional[Tuple[float, float]] = None
     best_target_idx: Optional[int] = None
 
-    # Compare the island against every other path to find the nearest target.
-    # We skip the island itself (same index) and degenerate single-point paths.
     for i, path in enumerate(paths):
         if i == island.index:
             continue
         if len(path) < 2:
             continue
 
-        # Convert the candidate target path to a Shapely LineString
         target_line = LineString(path)
         try:
-            # nearest_points returns a pair: the point on island_line that is
-            # closest to target_line, and vice versa.
-            p1, p2 = nearest_points(island_line, target_line)
-            dist = p1.distance(p2)
+            # Step 1: find the point on the target that is nearest to the island centroid.
+            # This is where the target "faces" the island's centre.
+            _, p_target = nearest_points(centroid, target_line)
+            # Step 2: find the point on the island outline nearest to that target anchor.
+            p_island, _ = nearest_points(island_line, p_target)
+            dist = p_island.distance(p_target)
         except Exception:
-            # Malformed geometries can cause Shapely errors; skip them safely
             continue
 
-        # Keep track of whichever target gives the shortest bridge length
         if dist < best_dist:
             best_dist = dist
-            best_island_pt = (p1.x, p1.y)
-            best_target_pt = (p2.x, p2.y)
+            best_island_pt = (p_island.x, p_island.y)
+            best_target_pt = (p_target.x, p_target.y)
             best_target_idx = i
 
-    # If no valid target was found (e.g. only one path exists), skip this island
     if best_island_pt is None:
         return None
 

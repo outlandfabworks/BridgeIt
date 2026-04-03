@@ -797,9 +797,31 @@ class InteractiveCanvas(QGraphicsView):
 
         # ── Bridge mode: place endpoints ──────────────────────────────────
         if self._mode == Mode.BRIDGE:
-            # Convert widget pixel coordinates to scene coordinates
             scene_pos = self.mapToScene(event.position().toPoint())
             pt = (float(scene_pos.x()), float(scene_pos.y()))
+
+            # Left- or right-click on an existing staged bridge → select/deselect it
+            # instead of placing a new bridge endpoint.
+            hit = self._hit_any(scene_pos)
+            if isinstance(hit, _StagedBridgeItem):
+                multi = bool(event.modifiers() & (
+                    Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier
+                ))
+                if not multi:
+                    # Deselect all other staged items first
+                    for s in self._staged_items:
+                        if s is not hit:
+                            s.set_sel(False)
+                hit.toggle()
+                self.selection_changed.emit()
+                event.accept()
+                return
+
+            # Right-click on empty space → no-op in bridge mode
+            if event.button() == Qt.MouseButton.RightButton:
+                event.accept()
+                return
+
             shift = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
             self._bridge_click(pt, shift)
             event.accept()
