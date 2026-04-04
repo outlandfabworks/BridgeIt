@@ -119,52 +119,79 @@ def _bridge_island(
     analysis: AnalysisResult,
     bridge_px: float,
 ) -> Optional[Bridge]:
-    """Find nearest target path and insert a bridge into the island path.
+    """Find the correct target path and insert a bridge into the island path.
 
-    We use a two-step centroid-guided approach instead of raw outline-to-outline
-    nearest_points().  The raw approach often picks awkward corners; guiding via
-    the island centroid produces bridges that go straight across the natural gap:
+    Strategy — prefer containment over proximity:
 
-      Step 1 — Find the point on each candidate target nearest to the island
-               centroid.  This anchors the target side of the bridge near the
-               "facing" edge rather than an unrelated corner.
-      Step 2 — Find the point on the island outline nearest to that target point.
-               This gives the island side of the bridge, which now lines up with
-               the target anchor.
+      1. Find every path whose polygon contains the island's centroid.
+         These are "parent" shapes that the island sits inside (e.g. the outer
+         stroke of the letter whose counter this island is).  Bridge to the
+         SMALLEST such parent — that is the most immediate enclosing boundary.
 
-    Whichever target produces the shortest step-2 distance wins.
+      2. If no enclosing parent exists (free-floating island), fall back to the
+         centroid-guided nearest-path search: find the point on each candidate
+         nearest to the island centroid, then find the island-side point nearest
+         to that anchor, and pick the shortest such connection.
+
+    Using containment first fixes the most common bad-placement case: letter
+    counters (holes in A, D, O, R …) would otherwise bridge to whichever other
+    letter outline happened to be geometrically closest, producing bridges that
+    cut straight across words.  With containment, each counter bridges to the
+    stroke of its own letter.
     """
     island_line = LineString(island.path)
-    # Shapely centroid of the island polygon — used to guide target-side anchoring
     centroid = island.polygon.centroid
 
-    best_dist = math.inf
     best_island_pt: Optional[Tuple[float, float]] = None
     best_target_pt: Optional[Tuple[float, float]] = None
     best_target_idx: Optional[int] = None
 
+    # ── Pass 1: find the innermost path that contains this island ─────────
+    containing: List[Tuple[float, int]] = []   # (area, path_index)
     for i, path in enumerate(paths):
-        if i == island.index:
+        if i == island.index or len(path) < 3:
             continue
-        if len(path) < 2:
-            continue
-
-        target_line = LineString(path)
         try:
-            # Step 1: find the point on the target that is nearest to the island centroid.
-            # This is where the target "faces" the island's centre.
-            _, p_target = nearest_points(centroid, target_line)
-            # Step 2: find the point on the island outline nearest to that target anchor.
-            p_island, _ = nearest_points(island_line, p_target)
-            dist = p_island.distance(p_target)
+            poly = Polygon(path)
+            if not poly.is_valid:
+                poly = poly.buffer(0)
+            if poly.contains(centroid):
+                containing.append((poly.area, i))
         except Exception:
             continue
 
-        if dist < best_dist:
-            best_dist = dist
+    if containing:
+        # Smallest enclosing area = most immediate parent (e.g. the letter stroke)
+        containing.sort(key=lambda x: x[0])
+        target_idx = containing[0][1]
+        target_line = LineString(paths[target_idx])
+        try:
+            _, p_target = nearest_points(centroid, target_line)
+            p_island, _ = nearest_points(island_line, p_target)
             best_island_pt = (p_island.x, p_island.y)
             best_target_pt = (p_target.x, p_target.y)
-            best_target_idx = i
+            best_target_idx = target_idx
+        except Exception:
+            pass   # fall through to pass 2
+
+    # ── Pass 2: no containing path — centroid-guided nearest-path search ──
+    if best_island_pt is None:
+        best_dist = math.inf
+        for i, path in enumerate(paths):
+            if i == island.index or len(path) < 2:
+                continue
+            target_line = LineString(path)
+            try:
+                _, p_target = nearest_points(centroid, target_line)
+                p_island, _ = nearest_points(island_line, p_target)
+                dist = p_island.distance(p_target)
+            except Exception:
+                continue
+            if dist < best_dist:
+                best_dist = dist
+                best_island_pt = (p_island.x, p_island.y)
+                best_target_pt = (p_target.x, p_target.y)
+                best_target_idx = i
 
     if best_island_pt is None:
         return None
