@@ -65,6 +65,51 @@ _STAGE_NUM: dict = {
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _apply_dialog_theme(dlg: "QMessageBox") -> None:
+    """Apply the app's dark theme stylesheet to a QMessageBox so it doesn't
+    appear as a jarring system-native dialog."""
+    from bridgeit.gui.themes import current_theme
+    t = current_theme()
+    dlg.setStyleSheet(f"""
+        QMessageBox {{
+            background-color: {t['card_bg']};
+            color: {t['text']};
+        }}
+        QMessageBox QLabel {{
+            color: {t['text']};
+            font-size: 13px;
+        }}
+        QMessageBox QPushButton {{
+            background-color: {t['border']};
+            color: {t['text']};
+            border: 1px solid {t['border']};
+            border-radius: 4px;
+            padding: 5px 16px;
+            font-size: 12px;
+            min-width: 64px;
+        }}
+        QMessageBox QPushButton:hover {{
+            background-color: {t['accent']};
+            color: #ffffff;
+            border-color: {t['accent']};
+        }}
+        QMessageBox QPushButton:default {{
+            border-color: {t['accent']};
+        }}
+        QTextEdit {{
+            background-color: {t['bg']};
+            color: {t['text_muted']};
+            font-family: monospace;
+            font-size: 11px;
+            border: 1px solid {t['border']};
+        }}
+    """)
+
+
+# ---------------------------------------------------------------------------
 # Background worker
 # ---------------------------------------------------------------------------
 
@@ -410,6 +455,8 @@ class MainWindow(QMainWindow):
         self._btn_erase.setEnabled(False)
         self._btn_erase.setCheckable(True)
         self._btn_erase.clicked.connect(self._on_toggle_erase_mode)
+        self._btn_erase.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._btn_erase.customContextMenuRequested.connect(lambda _: self._on_erase_clear())
         hlay.addWidget(self._btn_erase)
 
         self._btn_crop = self._header_btn(
@@ -1313,9 +1360,8 @@ class MainWindow(QMainWindow):
         self._show_pipeline_error(message)
 
     def _show_pipeline_error(self, message: str) -> None:
-        """Show a pipeline error in a QMessageBox with the full traceback in Details."""
+        """Show a pipeline error in a themed QMessageBox with traceback in Details."""
         self._set_busy(False)
-        # First line is the summary; everything else is traceback detail
         lines = message.strip().splitlines()
         summary = lines[0] if lines else "An unknown error occurred"
         self._set_status(f"Error: {summary}", error=True)
@@ -1325,6 +1371,7 @@ class MainWindow(QMainWindow):
         dlg.setText(summary)
         if len(lines) > 1:
             dlg.setDetailedText(message)
+        _apply_dialog_theme(dlg)
         dlg.exec()
 
     @pyqtSlot()
@@ -1371,10 +1418,10 @@ class MainWindow(QMainWindow):
     def _on_toggle_erase_mode(self) -> None:
         """Enter or exit background-erase mode.
 
-        First click: enter erase mode — show original image so the user can
-        click on background areas to sample their colour.
-        Second click (while in erase mode): clear all sampled colours and exit,
-        reverting to auto background removal.
+        First click: enter erase mode — show original image for colour sampling.
+        Second click: exit sampling UI and return to the processed result.
+          The sampled colours are KEPT so the erase stays active; they are only
+          cleared when the user loads a new image or right-clicks the button.
         """
         if self._btn_erase.isChecked():
             # Entering erase mode — show the original image for colour sampling
@@ -1383,38 +1430,52 @@ class MainWindow(QMainWindow):
             self._preview.img_preview.set_erase_mode(True)
             n = len(self._erase_colors)
             tip = (
-                "Erase mode ON — click on background areas to sample colours.  "
+                "Erase mode — click background areas to sample colours.  "
                 f"({n} colour{'s' if n != 1 else ''} sampled)  "
-                "Click button again to clear and exit."
+                "Click again to finish; right-click to clear all colours."
             )
             self._btn_erase.setToolTip(tip)
-            self._set_status("Erase mode: click on background areas to remove them")
-        else:
-            # Exiting erase mode — ask the user if they sampled any colours
-            if self._erase_colors:
-                answer = QMessageBox.question(
-                    self,
-                    "Exit Erase Mode",
-                    "Clear all sampled erase colours and revert to automatic background removal?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
-                    QMessageBox.StandardButton.Cancel,
+            if n:
+                self._set_status(
+                    f"Erase mode: {n} colour{'s' if n != 1 else ''} active — click more areas to add"
                 )
-                if answer != QMessageBox.StandardButton.Yes:
-                    # User cancelled — stay in erase mode
-                    self._btn_erase.setChecked(True)
-                    return
-            self._erase_colors = []
+            else:
+                self._set_status("Erase mode: click on background areas to remove them")
+        else:
+            # Exiting sampling UI — keep the erase colours, just stop sampling
             self._preview.img_preview.set_erase_mode(False)
-            self._btn_erase.setToolTip("Erase Background  — click to enter erase mode")
-            self._set_status("Erase colours cleared — using auto background removal")
-            # Show the nobg image again if we have one
+            n = len(self._erase_colors)
+            if n:
+                self._btn_erase.setToolTip(
+                    f"Erase Background — {n} colour{'s' if n != 1 else ''} active  "
+                    "(click to add more · right-click to clear)"
+                )
+                self._set_status(
+                    f"Erase: {n} colour{'s' if n != 1 else ''} active — "
+                    "right-click the button to clear"
+                )
+            else:
+                self._btn_erase.setToolTip("Erase Background  — click to enter erase mode")
+                self._set_status("Erase mode off")
+            # Show the current nobg result
             if self._nobg_image is not None:
                 self._preview.show_image_from_pil(self._nobg_image)
-            # Re-run so the pipeline reverts to auto-removal
-            src = self._source_image if self._source_image is not None \
-                else (self._last_result.source_path if self._last_result else None)
-            if src is not None:
-                self._run_pipeline(source=src, preview_only=False)
+
+    @pyqtSlot()
+    def _on_erase_clear(self) -> None:
+        """Clear all sampled erase colours and revert to automatic background removal."""
+        if not self._erase_colors:
+            return
+        self._erase_colors = []
+        self._btn_erase.setChecked(False)
+        self._preview.img_preview.set_erase_mode(False)
+        self._btn_erase.setToolTip("Erase Background  — click to enter erase mode")
+        self._set_status("Erase colours cleared — reverting to auto background removal")
+        if self._nobg_image is not None:
+            self._preview.show_image_from_pil(self._nobg_image)
+        src = self._source_image
+        if src is not None:
+            self._run_pipeline(source=src, preview_only=False)
 
     @pyqtSlot()
     def _on_toggle_lasso_mode(self) -> None:
