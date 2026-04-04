@@ -78,21 +78,22 @@ def _extract_alpha(img: Image.Image) -> np.ndarray:
     binary = np.where(alpha > 10, np.uint8(255), np.uint8(0))
 
     # Gaussian blur softens staircase edges, then re-threshold for a clean mask.
-    # Threshold at 200 (not 127) so the path falls on the inner edge of the blur
-    # zone — this keeps paths tight to the original artwork rather than expanded.
+    # Threshold at 150 (not 200): tight enough to keep paths close to the artwork,
+    # but low enough that thin strokes (2–3 px wide small text) survive the blur
+    # without being completely erased.  200 was destroying thin lettering.
     pil = Image.fromarray(binary, "L")
     pil = pil.filter(_IF.GaussianBlur(radius=2))
-    binary = np.where(np.array(pil) > 200, np.uint8(255), np.uint8(0))
+    binary = np.where(np.array(pil) > 150, np.uint8(255), np.uint8(0))
 
-    # Morphological cleanup via PIL (thread-safe; equivalent to cv2 morphologyEx):
-    # MORPH_CLOSE (dilate then erode) fills tiny holes inside shapes.
-    # MORPH_OPEN  (erode then dilate) removes tiny isolated specks.
-    # One close iteration is enough — two can visibly expand thin strokes.
+    # CLOSE pass (dilate → erode) fills tiny holes inside shapes — safe for
+    # thin features because dilation happens first and counteracts the erosion.
+    # We intentionally skip the OPEN pass (erode → dilate): it removes isolated
+    # noise specks but the blur+threshold above already handles that, and the
+    # erosion step destroys 2–3 px strokes (like small text) before they can
+    # be restored by the subsequent dilation.
     pil = Image.fromarray(binary, "L")
-    pil = pil.filter(_IF.MaxFilter(3))           # close iterations=1
-    pil = pil.filter(_IF.MinFilter(3))           #   dilate then erode
-    pil = pil.filter(_IF.MinFilter(3))           # open  iterations=1
-    pil = pil.filter(_IF.MaxFilter(3))           #   erode then dilate
+    pil = pil.filter(_IF.MaxFilter(3))   # dilate
+    pil = pil.filter(_IF.MinFilter(3))   # erode  → CLOSE complete
 
     return np.array(pil)
 
