@@ -12,10 +12,10 @@ Accepts drag-and-drop of image files.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 # Qt core types: signals/slots, geometry, and alignment flags
-from PyQt6.QtCore import QMimeData, QPointF, QRect, QRectF, QSizeF, Qt, pyqtSignal
+from PyQt6.QtCore import QMimeData, QPointF, QSizeF, Qt, pyqtSignal
 
 # Qt graphics/painting types
 from PyQt6.QtGui import (
@@ -23,8 +23,10 @@ from PyQt6.QtGui import (
     QColor,
     QDragEnterEvent,
     QDropEvent,
+    QKeyEvent,
     QMouseEvent,
     QPainter,
+    QPainterPath,
     QPen,
     QPixmap,
     QWheelEvent,
@@ -137,9 +139,9 @@ class ImagePreview(QLabel):
     # Emitted when the user clicks in erase mode — carries the sampled (R, G, B)
     color_sampled = pyqtSignal(int, int, int)
 
-    # Emitted when the user finishes drawing a keep-region rectangle.
-    # Carries (x1, y1, x2, y2) in original image pixel coordinates.
-    crop_selected = pyqtSignal(int, int, int, int)
+    # Emitted when the user closes the lasso polygon.
+    # Carries a list of (x, y) int tuples in original image pixel coordinates.
+    lasso_selected = pyqtSignal(object)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -148,30 +150,32 @@ class ImagePreview(QLabel):
         self._offset = QPointF(0, 0)             # pan offset in pixels
         self._drag_start: Optional[QPointF] = None  # mouse position at start of pan drag
         self._erase_mode = False                  # when True, left-click samples a colour
-        # Crop / keep-region mode state
-        self._crop_mode = False
-        self._crop_drag_start: Optional[QPointF] = None   # widget coords of drag start
-        self._crop_drag_end: Optional[QPointF] = None     # widget coords of drag end
-        self._active_crop: Optional[tuple] = None         # confirmed (x1,y1,x2,y2) in image px
+        # Lasso / polygon trace mode
+        self._lasso_mode = False
+        self._lasso_pts: List[QPointF] = []          # widget-coord vertices placed so far
+        self._lasso_hover: Optional[QPointF] = None  # live cursor position for preview line
+        self._confirmed_lasso_img: Optional[List[tuple]] = None  # confirmed polygon in image coords
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setAcceptDrops(True)
         # Expanding policy lets the widget grow to fill all available space
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
 
     def set_erase_mode(self, on: bool) -> None:
         self._erase_mode = on
         self.setCursor(Qt.CursorShape.CrossCursor if on else Qt.CursorShape.ArrowCursor)
 
-    def set_crop_mode(self, on: bool) -> None:
-        self._crop_mode = on
-        self._crop_drag_start = None
-        self._crop_drag_end = None
+    def set_lasso_mode(self, on: bool) -> None:
+        self._lasso_mode = on
+        self._lasso_pts = []
+        self._lasso_hover = None
+        self.setMouseTracking(on)
         self.setCursor(Qt.CursorShape.CrossCursor if on else Qt.CursorShape.ArrowCursor)
         self.update()
 
-    def set_active_crop(self, rect: Optional[tuple]) -> None:
-        """Set or clear the confirmed crop overlay (x1, y1, x2, y2) in image pixels."""
-        self._active_crop = rect
+    def set_confirmed_lasso(self, img_pts: Optional[List[tuple]]) -> None:
+        """Set or clear the confirmed polygon (image-coord points) shown as overlay."""
+        self._confirmed_lasso_img = img_pts
         self.update()
 
     def _widget_to_image(self, pos: QPointF) -> Optional[tuple]:
@@ -181,25 +185,22 @@ class ImagePreview(QLabel):
         w, h = self.width(), self.height()
         pw, ph = self._pixmap.width(), self._pixmap.height()
         scale = min(w / pw, h / ph) * self._zoom
-        img_x = (w - pw * scale) / 2 + self._offset.x()
-        img_y = (h - ph * scale) / 2 + self._offset.y()
-        px = int((pos.x() - img_x) / scale)
-        py = int((pos.y() - img_y) / scale)
+        ox = (w - pw * scale) / 2 + self._offset.x()
+        oy = (h - ph * scale) / 2 + self._offset.y()
+        px = int((pos.x() - ox) / scale)
+        py = int((pos.y() - oy) / scale)
         return (max(0, min(px, pw - 1)), max(0, min(py, ph - 1)))
 
-    def _image_to_widget_rect(self, x1: int, y1: int, x2: int, y2: int) -> Optional[QRectF]:
-        """Convert image-pixel crop rect to widget-coordinate QRectF."""
-        if not self._pixmap:
-            return None
+    def _img_pts_to_widget(self, img_pts: List[tuple]) -> List[QPointF]:
+        """Convert image-coordinate points to widget-coordinate QPointFs."""
+        if not self._pixmap or not img_pts:
+            return []
         w, h = self.width(), self.height()
         pw, ph = self._pixmap.width(), self._pixmap.height()
         scale = min(w / pw, h / ph) * self._zoom
         ox = (w - pw * scale) / 2 + self._offset.x()
         oy = (h - ph * scale) / 2 + self._offset.y()
-        return QRectF(
-            ox + x1 * scale, oy + y1 * scale,
-            (x2 - x1) * scale, (y2 - y1) * scale,
-        )
+        return [QPointF(ox + x * scale, oy + y * scale) for x, y in img_pts]
 
     def set_pixmap(self, pixmap: QPixmap) -> None:
         # Load a new image and reset zoom/pan to the default "fit in window" state
@@ -237,26 +238,57 @@ class ImagePreview(QLabel):
 
         painter.drawPixmap(int(x), int(y), int(dw), int(dh), self._pixmap)
 
-        # ── Crop overlay ──────────────────────────────────────────────────
-        # Draw a dark vignette outside the selection + orange dashed border.
-        draw_rect: Optional[QRectF] = None
-        if self._crop_drag_start and self._crop_drag_end:
-            draw_rect = QRectF(self._crop_drag_start, self._crop_drag_end).normalized()
-        elif self._active_crop:
-            draw_rect = self._image_to_widget_rect(*self._active_crop)
+        # ── Lasso overlay ─────────────────────────────────────────────────
+        # Determine which polygon to draw: live points OR confirmed polygon
+        draw_pts: List[QPointF] = []
+        is_closed = False
 
-        if draw_rect:
-            shadow = QColor(0, 0, 0, 140)
-            # Four dark rectangles surrounding the selection
-            painter.fillRect(QRectF(0, 0, w, draw_rect.top()), shadow)
-            painter.fillRect(QRectF(0, draw_rect.bottom(), w, h - draw_rect.bottom()), shadow)
-            painter.fillRect(QRectF(0, draw_rect.top(), draw_rect.left(), draw_rect.height()), shadow)
-            painter.fillRect(QRectF(draw_rect.right(), draw_rect.top(), w - draw_rect.right(), draw_rect.height()), shadow)
+        if self._lasso_pts:
+            draw_pts = self._lasso_pts
+        elif self._confirmed_lasso_img:
+            draw_pts = self._img_pts_to_widget(self._confirmed_lasso_img)
+            is_closed = True
+
+        if draw_pts:
+            # Build a QPainterPath for the polygon
+            poly_path = QPainterPath()
+            poly_path.moveTo(draw_pts[0])
+            for pt in draw_pts[1:]:
+                poly_path.lineTo(pt)
+            if is_closed:
+                poly_path.closeSubpath()
+
+            if is_closed and len(draw_pts) >= 3:
+                # Dark vignette outside the selection
+                full_path = QPainterPath()
+                full_path.addRect(0, 0, float(self.width()), float(self.height()))
+                outside = full_path.subtracted(poly_path)
+                painter.fillPath(outside, QColor(0, 0, 0, 140))
+
             # Orange dashed border
-            pen = QPen(QColor(251, 146, 60), 2, Qt.PenStyle.DashLine)
+            pen = QPen(QColor(251, 146, 60), 2,
+                       Qt.PenStyle.SolidLine if is_closed else Qt.PenStyle.DashLine)
             painter.setPen(pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(draw_rect)
+            painter.drawPath(poly_path)
+
+            # Dots at each vertex
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor(251, 146, 60)))
+            for pt in draw_pts:
+                painter.drawEllipse(pt, 4.0, 4.0)
+
+            # Highlight first point larger (close-target indicator) when ≥3 pts placed
+            if self._lasso_pts and len(self._lasso_pts) >= 3:
+                painter.setBrush(QBrush(QColor(255, 255, 255, 200)))
+                painter.setPen(QPen(QColor(251, 146, 60), 1.5))
+                painter.drawEllipse(draw_pts[0], 7.0, 7.0)
+
+            # Live preview line from last point to cursor
+            if self._lasso_mode and self._lasso_hover and not is_closed and self._lasso_pts:
+                pen2 = QPen(QColor(251, 146, 60, 160), 1.5, Qt.PenStyle.DashLine)
+                painter.setPen(pen2)
+                painter.drawLine(draw_pts[-1], self._lasso_hover)
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         # angleDelta().y() is positive when scrolling up (zoom in) and
@@ -269,56 +301,77 @@ class ImagePreview(QLabel):
         self.update()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        # In crop mode, left-click starts drawing the keep-region rectangle
-        if self._crop_mode and event.button() == Qt.MouseButton.LeftButton:
-            self._crop_drag_start = event.position()
-            self._crop_drag_end = event.position()
-            self.update()
+        if self._lasso_mode:
+            if event.button() == Qt.MouseButton.LeftButton:
+                pos = event.position()
+                # Close if clicking near the first point (≥3 pts already placed)
+                if len(self._lasso_pts) >= 3:
+                    fp = self._lasso_pts[0]
+                    dx, dy = pos.x() - fp.x(), pos.y() - fp.y()
+                    if dx*dx + dy*dy < 225:   # 15px radius
+                        self._close_lasso()
+                        return
+                self._lasso_pts.append(pos)
+                self.update()
+            elif event.button() == Qt.MouseButton.RightButton:
+                if len(self._lasso_pts) >= 3:
+                    self._close_lasso()
             return
-        # In erase mode, left-click samples the colour at the clicked image pixel
+
         if self._erase_mode and event.button() == Qt.MouseButton.LeftButton and self._pixmap:
             pt = self._widget_to_image(event.position())
             if pt:
                 qimg = self._pixmap.toImage()
                 c = QColor(qimg.pixel(pt[0], pt[1]))
                 self.color_sampled.emit(c.red(), c.green(), c.blue())
-            return  # don't start a pan drag in erase mode
-        # Middle-click starts a pan drag — record where the mouse is
+            return
         if event.button() == Qt.MouseButton.MiddleButton:
             self._drag_start = event.position()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        # In crop mode, update the live drag rectangle
-        if self._crop_mode and self._crop_drag_start is not None:
-            self._crop_drag_end = event.position()
+        if self._lasso_mode:
+            self._lasso_hover = event.position()
             self.update()
             return
-        # While middle-click is held, compute how far the mouse has moved
-        # and shift the image's offset by that amount (panning)
         if self._drag_start is not None:
             delta = event.position() - self._drag_start
             self._offset += delta
-            self._drag_start = event.position()  # update start for next frame
+            self._drag_start = event.position()
             self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        # In crop mode, finalise the rectangle and emit the selection
-        if self._crop_mode and event.button() == Qt.MouseButton.LeftButton and self._crop_drag_start:
-            pt1 = self._widget_to_image(self._crop_drag_start)
-            pt2 = self._widget_to_image(event.position())
-            self._crop_drag_start = None
-            self._crop_drag_end = None
-            if pt1 and pt2:
-                x1, x2 = sorted([pt1[0], pt2[0]])
-                y1, y2 = sorted([pt1[1], pt2[1]])
-                if x2 > x1 + 5 and y2 > y1 + 5:   # ignore tiny accidental drags
-                    self._active_crop = (x1, y1, x2, y2)
-                    self.crop_selected.emit(x1, y1, x2, y2)
-            self.update()
-            return
-        # Middle-click released — stop panning
         if event.button() == Qt.MouseButton.MiddleButton:
             self._drag_start = None
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if self._lasso_mode:
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                if len(self._lasso_pts) >= 3:
+                    self._close_lasso()
+            elif event.key() == Qt.Key.Key_Escape:
+                self._lasso_pts = []
+                self._lasso_hover = None
+                self.update()
+            elif event.key() == Qt.Key.Key_Backspace:
+                if self._lasso_pts:
+                    self._lasso_pts.pop()
+                    self.update()
+            return
+        super().keyPressEvent(event)
+
+    def _close_lasso(self) -> None:
+        """Convert widget-coord polygon to image coords and emit lasso_selected."""
+        img_pts = []
+        for wpt in self._lasso_pts:
+            ipt = self._widget_to_image(wpt)
+            if ipt:
+                img_pts.append(ipt)
+        self._lasso_pts = []
+        self._lasso_hover = None
+        if len(img_pts) >= 3:
+            self._confirmed_lasso_img = img_pts
+            self.lasso_selected.emit(img_pts)
+        self.update()
 
 
 # PreviewPanel is a QStackedWidget — a container that holds multiple "pages"

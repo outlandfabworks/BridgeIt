@@ -135,14 +135,18 @@ _ICONS: dict[str, str] = {
             stroke="COLOR" stroke-width="1.2" stroke-linejoin="round"/>
     </svg>""",
 
-    # Keep Region — dashed rectangle with a checkmark inside (crop/select keep area)
+    # Trace Selection — dashed pentagon with dots at vertices (polygon lasso tool)
     "crop": """
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none">
-      <rect x="3" y="3" width="14" height="14" rx="1.5"
-            stroke="COLOR" stroke-width="1.5" stroke-dasharray="3 2"/>
-      <polyline points="6,10 9,13 14,7"
-                stroke="COLOR" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>""",
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none">
+  <polygon points="10,2 17,7 14,17 6,17 3,7"
+           stroke="COLOR" stroke-width="1.5" stroke-dasharray="3 1.5"
+           stroke-linejoin="round" fill="none"/>
+  <circle cx="10" cy="2"  r="1.8" fill="COLOR"/>
+  <circle cx="17" cy="7"  r="1.8" fill="COLOR"/>
+  <circle cx="14" cy="17" r="1.8" fill="COLOR"/>
+  <circle cx="6"  cy="17" r="1.8" fill="COLOR"/>
+  <circle cx="3"  cy="7"  r="1.8" fill="COLOR"/>
+</svg>""",
 }
 
 # ---------------------------------------------------------------------------

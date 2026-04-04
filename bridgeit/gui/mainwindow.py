@@ -191,8 +191,8 @@ class MainWindow(QMainWindow):
         self._source_image: Optional[Image.Image] = None
         # Colours the user has sampled for erasure: [(r, g, b), ...]
         self._erase_colors: list = []
-        # Keep-region crop rect in source-image pixel coords: (x1, y1, x2, y2) or None
-        self._crop_rect: Optional[tuple] = None
+        # Lasso polygon points in source-image pixel coords: [(x,y), ...] or None
+        self._lasso_points: Optional[list] = None
         # Index of the bridge currently being resized (-1 = none selected)
         self._editing_bridge_idx: int = -1
 
@@ -225,8 +225,8 @@ class MainWindow(QMainWindow):
 
         # Colour sampling signal from the image preview (erase mode)
         self._preview.img_preview.color_sampled.connect(self._on_color_sampled)
-        # Keep-region selection signal from the image preview (crop mode)
-        self._preview.img_preview.crop_selected.connect(self._on_crop_selected)
+        # Lasso polygon signal from the image preview (trace selection mode)
+        self._preview.img_preview.lasso_selected.connect(self._on_lasso_selected)
 
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
         self.setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
@@ -414,11 +414,11 @@ class MainWindow(QMainWindow):
 
         self._btn_crop = self._header_btn(
             "crop",
-            "Keep Region  — draw a rectangle to keep only that area; everything outside is removed",
+            "Trace Selection  — click points around what you want to keep; right-click or click first point to close",
         )
         self._btn_crop.setEnabled(False)
         self._btn_crop.setCheckable(True)
-        self._btn_crop.clicked.connect(self._on_toggle_crop_mode)
+        self._btn_crop.clicked.connect(self._on_toggle_lasso_mode)
         hlay.addWidget(self._btn_crop)
 
         # ── RIGHT: meta controls ──────────────────────────────────────────
@@ -780,9 +780,9 @@ class MainWindow(QMainWindow):
         self._preview.img_preview.set_erase_mode(False)
         self._btn_crop.setEnabled(False)
         self._btn_crop.setChecked(False)
-        self._preview.img_preview.set_crop_mode(False)
-        self._preview.img_preview.set_active_crop(None)
-        self._crop_rect = None
+        self._preview.img_preview.set_lasso_mode(False)
+        self._preview.img_preview.set_confirmed_lasso(None)
+        self._lasso_points = None
 
         # Clear erase colours — new image means fresh start
         self._erase_colors = []
@@ -1168,11 +1168,16 @@ class MainWindow(QMainWindow):
         if self._worker_thread and self._worker_thread.isRunning():
             return
 
-        # Apply keep-region crop: always run full pipeline on the cropped source image
-        if self._crop_rect is not None and self._source_image is not None:
-            x1, y1, x2, y2 = self._crop_rect
-            source = self._source_image.crop((x1, y1, x2, y2))
-            preview_only = False   # background must be removed on the new region
+        # Apply lasso mask: fill everything outside the polygon with white so
+        # the background removal stage cleanly strips it away.
+        if self._lasso_points is not None and self._source_image is not None:
+            from PIL import Image as _PILImg, ImageDraw as _IDraw
+            src_rgb = self._source_image.convert("RGB")
+            mask = _PILImg.new("L", src_rgb.size, 0)
+            _IDraw.Draw(mask).polygon(self._lasso_points, fill=255)
+            white_bg = _PILImg.new("RGB", src_rgb.size, (255, 255, 255))
+            source = _PILImg.composite(src_rgb, white_bg, mask)
+            preview_only = False   # background must be re-run on the masked image
 
         if settings is None:
             settings = self._controls.get_settings()
@@ -1412,46 +1417,46 @@ class MainWindow(QMainWindow):
                 self._run_pipeline(source=src, preview_only=False)
 
     @pyqtSlot()
-    def _on_toggle_crop_mode(self) -> None:
-        """Enter or exit keep-region crop mode.
+    def _on_toggle_lasso_mode(self) -> None:
+        """Enter or exit polygon trace-selection mode.
 
-        First click: show original image, let user draw a rectangle.
-        Second click (toggle off): clear the crop and re-run at full size.
+        First click: show original image, user clicks points to trace a polygon.
+        Second click (toggle off): clear the selection and re-run at full size.
         """
         if self._btn_crop.isChecked():
             # Entering crop mode — show original so the user can see full extent
             if self._source_image is not None:
                 self._preview.show_image_from_pil(self._source_image)
-            self._preview.img_preview.set_crop_mode(True)
-            # Keep any existing crop rect visible as a starting point
-            if self._crop_rect:
-                self._preview.img_preview.set_active_crop(self._crop_rect)
-            self._set_status("Keep Region: drag a rectangle around what you want to keep")
-        else:
-            # Toggling off — clear the crop and revert to full-image processing
-            self._crop_rect = None
-            self._preview.img_preview.set_crop_mode(False)
-            self._preview.img_preview.set_active_crop(None)
-            self._btn_crop.setToolTip(
-                "Keep Region  — draw a rectangle to keep only that area; everything outside is removed"
+            self._preview.img_preview.set_lasso_mode(True)
+            # Keep any existing polygon visible as a starting reference
+            if self._lasso_points:
+                self._preview.img_preview.set_confirmed_lasso(self._lasso_points)
+            self._set_status(
+                "Trace Selection: click points around what to keep  ·  "
+                "right-click or click first point to close  ·  Backspace = undo last point"
             )
-            self._set_status("Crop cleared — processing full image")
+        else:
+            # Toggling off — clear the lasso and revert to full-image processing
+            self._lasso_points = None
+            self._preview.img_preview.set_lasso_mode(False)
+            self._preview.img_preview.set_confirmed_lasso(None)
+            self._btn_crop.setToolTip(
+                "Trace Selection  — click points around what you want to keep"
+            )
+            self._set_status("Trace selection cleared — processing full image")
             if self._nobg_image is not None:
                 self._preview.show_image_from_pil(self._nobg_image)
             src = self._source_image
             if src is not None:
                 self._run_pipeline(source=src, preview_only=False)
 
-    @pyqtSlot(int, int, int, int)
-    def _on_crop_selected(self, x1: int, y1: int, x2: int, y2: int) -> None:
-        """Called when the user finishes drawing a keep-region rectangle."""
-        self._crop_rect = (x1, y1, x2, y2)
-        w = x2 - x1
-        h = y2 - y1
-        self._btn_crop.setToolTip(f"Keep Region active: {w}×{h} px  — click to clear")
-        self._set_status(f"Keep Region: {w}×{h} px — re-running pipeline on cropped area…")
-        # Exit crop mode and re-run pipeline; the crop is applied inside _run_pipeline
-        self._preview.img_preview.set_crop_mode(False)
+    @pyqtSlot(object)
+    def _on_lasso_selected(self, points: list) -> None:
+        """Called when the user closes the lasso polygon."""
+        self._lasso_points = points
+        self._btn_crop.setToolTip(f"Trace Selection active: {len(points)} pts — click to clear")
+        self._set_status(f"Trace Selection: {len(points)}-point polygon — re-running pipeline…")
+        self._preview.img_preview.set_lasso_mode(False)
         if self._source_image is not None:
             self._run_pipeline(source=self._source_image, preview_only=False)
 
