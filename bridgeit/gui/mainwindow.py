@@ -1200,11 +1200,12 @@ class MainWindow(QMainWindow):
         # Worker finished → call our finished handler (back on main thread)
         self._worker.finished.connect(self._on_pipeline_finished)
         self._worker.error.connect(self._on_pipeline_error)
-        # After worker finishes (or errors), stop the thread and schedule cleanup
+        # After worker finishes (or errors), stop the thread; cleanup via slot
+        # that nulls instance references BEFORE calling deleteLater() so no
+        # code ever calls isRunning() on a deleted C++ object.
         self._worker.finished.connect(self._worker_thread.quit)
         self._worker.error.connect(self._worker_thread.quit)
-        self._worker_thread.finished.connect(self._worker_thread.deleteLater)
-        self._worker_thread.finished.connect(self._worker.deleteLater)
+        self._worker_thread.finished.connect(self._cleanup_worker_thread)
 
         self._set_busy(True)        # show progress bar, disable Open button
         self._worker_thread.start() # kick off the background thread
@@ -1412,6 +1413,20 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @pyqtSlot()
+    def _cleanup_worker_thread(self) -> None:
+        """Called when the worker thread finishes. Nulls instance references
+        before scheduling Qt deletion so isRunning() is never called on a
+        deleted C++ object."""
+        thread = self._worker_thread
+        worker = self._worker
+        self._worker_thread = None
+        self._worker = None
+        if worker is not None:
+            worker.deleteLater()
+        if thread is not None:
+            thread.deleteLater()
 
     def _set_busy(self, busy: bool) -> None:
         """Show/hide the progress indicator and disable/enable the Open button."""
