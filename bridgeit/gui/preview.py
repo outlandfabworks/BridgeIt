@@ -15,10 +15,11 @@ from pathlib import Path
 from typing import Optional
 
 # Qt core types: signals/slots, geometry, and alignment flags
-from PyQt6.QtCore import QMimeData, QPointF, QRectF, QSizeF, Qt, pyqtSignal
+from PyQt6.QtCore import QMimeData, QPointF, QRect, QRectF, QSizeF, Qt, pyqtSignal
 
 # Qt graphics/painting types
 from PyQt6.QtGui import (
+    QBrush,
     QColor,
     QDragEnterEvent,
     QDropEvent,
@@ -136,6 +137,10 @@ class ImagePreview(QLabel):
     # Emitted when the user clicks in erase mode — carries the sampled (R, G, B)
     color_sampled = pyqtSignal(int, int, int)
 
+    # Emitted when the user finishes drawing a keep-region rectangle.
+    # Carries (x1, y1, x2, y2) in original image pixel coordinates.
+    crop_selected = pyqtSignal(int, int, int, int)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._pixmap: Optional[QPixmap] = None   # the image to display
@@ -143,6 +148,11 @@ class ImagePreview(QLabel):
         self._offset = QPointF(0, 0)             # pan offset in pixels
         self._drag_start: Optional[QPointF] = None  # mouse position at start of pan drag
         self._erase_mode = False                  # when True, left-click samples a colour
+        # Crop / keep-region mode state
+        self._crop_mode = False
+        self._crop_drag_start: Optional[QPointF] = None   # widget coords of drag start
+        self._crop_drag_end: Optional[QPointF] = None     # widget coords of drag end
+        self._active_crop: Optional[tuple] = None         # confirmed (x1,y1,x2,y2) in image px
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setAcceptDrops(True)
         # Expanding policy lets the widget grow to fill all available space
@@ -151,6 +161,45 @@ class ImagePreview(QLabel):
     def set_erase_mode(self, on: bool) -> None:
         self._erase_mode = on
         self.setCursor(Qt.CursorShape.CrossCursor if on else Qt.CursorShape.ArrowCursor)
+
+    def set_crop_mode(self, on: bool) -> None:
+        self._crop_mode = on
+        self._crop_drag_start = None
+        self._crop_drag_end = None
+        self.setCursor(Qt.CursorShape.CrossCursor if on else Qt.CursorShape.ArrowCursor)
+        self.update()
+
+    def set_active_crop(self, rect: Optional[tuple]) -> None:
+        """Set or clear the confirmed crop overlay (x1, y1, x2, y2) in image pixels."""
+        self._active_crop = rect
+        self.update()
+
+    def _widget_to_image(self, pos: QPointF) -> Optional[tuple]:
+        """Convert a widget-coordinate point to image-pixel coordinates."""
+        if not self._pixmap:
+            return None
+        w, h = self.width(), self.height()
+        pw, ph = self._pixmap.width(), self._pixmap.height()
+        scale = min(w / pw, h / ph) * self._zoom
+        img_x = (w - pw * scale) / 2 + self._offset.x()
+        img_y = (h - ph * scale) / 2 + self._offset.y()
+        px = int((pos.x() - img_x) / scale)
+        py = int((pos.y() - img_y) / scale)
+        return (max(0, min(px, pw - 1)), max(0, min(py, ph - 1)))
+
+    def _image_to_widget_rect(self, x1: int, y1: int, x2: int, y2: int) -> Optional[QRectF]:
+        """Convert image-pixel crop rect to widget-coordinate QRectF."""
+        if not self._pixmap:
+            return None
+        w, h = self.width(), self.height()
+        pw, ph = self._pixmap.width(), self._pixmap.height()
+        scale = min(w / pw, h / ph) * self._zoom
+        ox = (w - pw * scale) / 2 + self._offset.x()
+        oy = (h - ph * scale) / 2 + self._offset.y()
+        return QRectF(
+            ox + x1 * scale, oy + y1 * scale,
+            (x2 - x1) * scale, (y2 - y1) * scale,
+        )
 
     def set_pixmap(self, pixmap: QPixmap) -> None:
         # Load a new image and reset zoom/pan to the default "fit in window" state
@@ -188,6 +237,27 @@ class ImagePreview(QLabel):
 
         painter.drawPixmap(int(x), int(y), int(dw), int(dh), self._pixmap)
 
+        # ── Crop overlay ──────────────────────────────────────────────────
+        # Draw a dark vignette outside the selection + orange dashed border.
+        draw_rect: Optional[QRectF] = None
+        if self._crop_drag_start and self._crop_drag_end:
+            draw_rect = QRectF(self._crop_drag_start, self._crop_drag_end).normalized()
+        elif self._active_crop:
+            draw_rect = self._image_to_widget_rect(*self._active_crop)
+
+        if draw_rect:
+            shadow = QColor(0, 0, 0, 140)
+            # Four dark rectangles surrounding the selection
+            painter.fillRect(QRectF(0, 0, w, draw_rect.top()), shadow)
+            painter.fillRect(QRectF(0, draw_rect.bottom(), w, h - draw_rect.bottom()), shadow)
+            painter.fillRect(QRectF(0, draw_rect.top(), draw_rect.left(), draw_rect.height()), shadow)
+            painter.fillRect(QRectF(draw_rect.right(), draw_rect.top(), w - draw_rect.right(), draw_rect.height()), shadow)
+            # Orange dashed border
+            pen = QPen(QColor(251, 146, 60), 2, Qt.PenStyle.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(draw_rect)
+
     def wheelEvent(self, event: QWheelEvent) -> None:
         # angleDelta().y() is positive when scrolling up (zoom in) and
         # negative when scrolling down (zoom out).
@@ -199,20 +269,18 @@ class ImagePreview(QLabel):
         self.update()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        # In crop mode, left-click starts drawing the keep-region rectangle
+        if self._crop_mode and event.button() == Qt.MouseButton.LeftButton:
+            self._crop_drag_start = event.position()
+            self._crop_drag_end = event.position()
+            self.update()
+            return
         # In erase mode, left-click samples the colour at the clicked image pixel
         if self._erase_mode and event.button() == Qt.MouseButton.LeftButton and self._pixmap:
-            w, h = self.width(), self.height()
-            pw, ph = self._pixmap.width(), self._pixmap.height()
-            scale = min(w / pw, h / ph) * self._zoom
-            img_x = (w - pw * scale) / 2 + self._offset.x()
-            img_y = (h - ph * scale) / 2 + self._offset.y()
-            sx = event.position().x()
-            sy = event.position().y()
-            px = int((sx - img_x) / scale)
-            py = int((sy - img_y) / scale)
-            if 0 <= px < pw and 0 <= py < ph:
+            pt = self._widget_to_image(event.position())
+            if pt:
                 qimg = self._pixmap.toImage()
-                c = QColor(qimg.pixel(px, py))
+                c = QColor(qimg.pixel(pt[0], pt[1]))
                 self.color_sampled.emit(c.red(), c.green(), c.blue())
             return  # don't start a pan drag in erase mode
         # Middle-click starts a pan drag — record where the mouse is
@@ -220,6 +288,11 @@ class ImagePreview(QLabel):
             self._drag_start = event.position()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        # In crop mode, update the live drag rectangle
+        if self._crop_mode and self._crop_drag_start is not None:
+            self._crop_drag_end = event.position()
+            self.update()
+            return
         # While middle-click is held, compute how far the mouse has moved
         # and shift the image's offset by that amount (panning)
         if self._drag_start is not None:
@@ -229,6 +302,20 @@ class ImagePreview(QLabel):
             self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        # In crop mode, finalise the rectangle and emit the selection
+        if self._crop_mode and event.button() == Qt.MouseButton.LeftButton and self._crop_drag_start:
+            pt1 = self._widget_to_image(self._crop_drag_start)
+            pt2 = self._widget_to_image(event.position())
+            self._crop_drag_start = None
+            self._crop_drag_end = None
+            if pt1 and pt2:
+                x1, x2 = sorted([pt1[0], pt2[0]])
+                y1, y2 = sorted([pt1[1], pt2[1]])
+                if x2 > x1 + 5 and y2 > y1 + 5:   # ignore tiny accidental drags
+                    self._active_crop = (x1, y1, x2, y2)
+                    self.crop_selected.emit(x1, y1, x2, y2)
+            self.update()
+            return
         # Middle-click released — stop panning
         if event.button() == Qt.MouseButton.MiddleButton:
             self._drag_start = None

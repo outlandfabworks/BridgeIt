@@ -191,6 +191,8 @@ class MainWindow(QMainWindow):
         self._source_image: Optional[Image.Image] = None
         # Colours the user has sampled for erasure: [(r, g, b), ...]
         self._erase_colors: list = []
+        # Keep-region crop rect in source-image pixel coords: (x1, y1, x2, y2) or None
+        self._crop_rect: Optional[tuple] = None
         # Index of the bridge currently being resized (-1 = none selected)
         self._editing_bridge_idx: int = -1
 
@@ -223,6 +225,8 @@ class MainWindow(QMainWindow):
 
         # Colour sampling signal from the image preview (erase mode)
         self._preview.img_preview.color_sampled.connect(self._on_color_sampled)
+        # Keep-region selection signal from the image preview (crop mode)
+        self._preview.img_preview.crop_selected.connect(self._on_crop_selected)
 
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
         self.setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
@@ -407,6 +411,15 @@ class MainWindow(QMainWindow):
         self._btn_erase.setCheckable(True)
         self._btn_erase.clicked.connect(self._on_toggle_erase_mode)
         hlay.addWidget(self._btn_erase)
+
+        self._btn_crop = self._header_btn(
+            "crop",
+            "Keep Region  — draw a rectangle to keep only that area; everything outside is removed",
+        )
+        self._btn_crop.setEnabled(False)
+        self._btn_crop.setCheckable(True)
+        self._btn_crop.clicked.connect(self._on_toggle_crop_mode)
+        hlay.addWidget(self._btn_crop)
 
         # ── RIGHT: meta controls ──────────────────────────────────────────
         hlay.addStretch()
@@ -765,6 +778,11 @@ class MainWindow(QMainWindow):
         self._btn_erase.setEnabled(False)
         self._btn_erase.setChecked(False)
         self._preview.img_preview.set_erase_mode(False)
+        self._btn_crop.setEnabled(False)
+        self._btn_crop.setChecked(False)
+        self._preview.img_preview.set_crop_mode(False)
+        self._preview.img_preview.set_active_crop(None)
+        self._crop_rect = None
 
         # Clear erase colours — new image means fresh start
         self._erase_colors = []
@@ -1150,6 +1168,12 @@ class MainWindow(QMainWindow):
         if self._worker_thread and self._worker_thread.isRunning():
             return
 
+        # Apply keep-region crop: always run full pipeline on the cropped source image
+        if self._crop_rect is not None and self._source_image is not None:
+            x1, y1, x2, y2 = self._crop_rect
+            source = self._source_image.crop((x1, y1, x2, y2))
+            preview_only = False   # background must be removed on the new region
+
         if settings is None:
             settings = self._controls.get_settings()
 
@@ -1266,6 +1290,7 @@ class MainWindow(QMainWindow):
 
         self._btn_export.setEnabled(True)
         self._btn_erase.setEnabled(True)
+        self._btn_crop.setEnabled(True)
         self._controls.set_controls_enabled(True)
         self._set_status(
             f"Done — {islands} island(s) detected in {result.elapsed_seconds:.2f}s  "
@@ -1385,6 +1410,50 @@ class MainWindow(QMainWindow):
                 else (self._last_result.source_path if self._last_result else None)
             if src is not None:
                 self._run_pipeline(source=src, preview_only=False)
+
+    @pyqtSlot()
+    def _on_toggle_crop_mode(self) -> None:
+        """Enter or exit keep-region crop mode.
+
+        First click: show original image, let user draw a rectangle.
+        Second click (toggle off): clear the crop and re-run at full size.
+        """
+        if self._btn_crop.isChecked():
+            # Entering crop mode — show original so the user can see full extent
+            if self._source_image is not None:
+                self._preview.show_image_from_pil(self._source_image)
+            self._preview.img_preview.set_crop_mode(True)
+            # Keep any existing crop rect visible as a starting point
+            if self._crop_rect:
+                self._preview.img_preview.set_active_crop(self._crop_rect)
+            self._set_status("Keep Region: drag a rectangle around what you want to keep")
+        else:
+            # Toggling off — clear the crop and revert to full-image processing
+            self._crop_rect = None
+            self._preview.img_preview.set_crop_mode(False)
+            self._preview.img_preview.set_active_crop(None)
+            self._btn_crop.setToolTip(
+                "Keep Region  — draw a rectangle to keep only that area; everything outside is removed"
+            )
+            self._set_status("Crop cleared — processing full image")
+            if self._nobg_image is not None:
+                self._preview.show_image_from_pil(self._nobg_image)
+            src = self._source_image
+            if src is not None:
+                self._run_pipeline(source=src, preview_only=False)
+
+    @pyqtSlot(int, int, int, int)
+    def _on_crop_selected(self, x1: int, y1: int, x2: int, y2: int) -> None:
+        """Called when the user finishes drawing a keep-region rectangle."""
+        self._crop_rect = (x1, y1, x2, y2)
+        w = x2 - x1
+        h = y2 - y1
+        self._btn_crop.setToolTip(f"Keep Region active: {w}×{h} px  — click to clear")
+        self._set_status(f"Keep Region: {w}×{h} px — re-running pipeline on cropped area…")
+        # Exit crop mode and re-run pipeline; the crop is applied inside _run_pipeline
+        self._preview.img_preview.set_crop_mode(False)
+        if self._source_image is not None:
+            self._run_pipeline(source=self._source_image, preview_only=False)
 
     @pyqtSlot(int, int, int)
     def _on_color_sampled(self, r: int, g: int, b: int) -> None:

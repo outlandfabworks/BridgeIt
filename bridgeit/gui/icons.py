@@ -134,6 +134,15 @@ _ICONS: dict[str, str] = {
       <path d="M13 3 L14 6 L17 7 L14 8 L13 11 L12 8 L9 7 L12 6 Z"
             stroke="COLOR" stroke-width="1.2" stroke-linejoin="round"/>
     </svg>""",
+
+    # Keep Region — dashed rectangle with a checkmark inside (crop/select keep area)
+    "crop": """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none">
+      <rect x="3" y="3" width="14" height="14" rx="1.5"
+            stroke="COLOR" stroke-width="1.5" stroke-dasharray="3 2"/>
+      <polyline points="6,10 9,13 14,7"
+                stroke="COLOR" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>""",
 }
 
 # ---------------------------------------------------------------------------
