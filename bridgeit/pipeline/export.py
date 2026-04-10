@@ -183,17 +183,28 @@ def export_image_svg(
     """
     import numpy as np
     import cv2 as _cv2
+    from PIL import Image as _PILImage
     from bridgeit.pipeline.trace import _extract_alpha
 
     if nobg_image.mode != "RGBA":
         nobg_image = nobg_image.convert("RGBA")
 
     w, h = nobg_image.size
-    rgb_arr   = np.array(nobg_image.convert("RGB"), dtype=np.uint8)
-    alpha_arr = np.array(nobg_image.split()[3], dtype=np.uint8)
 
-    # Same binary-mask pre-processing as the cut-path tracer
-    binary = _extract_alpha(nobg_image)
+    # Supersample at 2× before tracing.
+    # Pixel-grid contours have staircase vertices; at 2× resolution each step is
+    # half the angular arc of the original, so the vertices after Douglas-Peucker
+    # simplification fall more evenly around curves.  Catmull-Rom smoothing of
+    # those evenly-distributed points produces genuinely smooth circles and arcs
+    # rather than smoothly-interpolated staircases.
+    _S = 2
+    w_s, h_s = w * _S, h * _S
+    hi_img   = nobg_image.resize((w_s, h_s), _PILImage.Resampling.LANCZOS)
+    rgb_hi   = np.array(hi_img.convert("RGB"), dtype=np.uint8)
+    alpha_hi = np.array(hi_img.split()[3], dtype=np.uint8)
+
+    # Binary mask from the upscaled image
+    binary = _extract_alpha(hi_img)
 
     # RETR_TREE: captures the full parent→child hierarchy so we know which
     # contours are holes (odd depth) vs filled shapes (even depth).
@@ -215,9 +226,11 @@ def export_image_svg(
 
     hier = hierarchy[0]  # shape (N, 4): [next_sib, prev_sib, first_child, parent]
 
-    # Simplify each contour with Douglas-Peucker (proportional epsilon)
+    # Area threshold scales by _S² (area grows as square of linear scale)
+    area_hi = min_area * (_S * _S)
+
     def _simplify(c):
-        if _cv2.contourArea(c) < min_area:
+        if _cv2.contourArea(c) < area_hi:
             return None
         if smoothing > 0 and len(c) >= 3:
             peri = _cv2.arcLength(c, True)
@@ -243,12 +256,13 @@ def export_image_svg(
             p = hier[p][3]
         return d
 
+    # Scale contour coordinates back to original (1×) space
     def _to_pts(c):
-        return [(float(pt[0][0]), float(pt[0][1])) for pt in c]
+        return [(float(pt[0][0]) / _S, float(pt[0][1]) / _S) for pt in c]
 
     # Even-depth contours (0, 2, 4, …) are filled shapes.
-    # Odd-depth contours are holes — they are included as sub-paths of their
-    # even-depth parent so SVG's evenodd rule punches them out automatically.
+    # Odd-depth contours are holes — included as sub-paths of their even-depth
+    # parent so SVG's evenodd rule punches them out automatically.
     even_idxs = sorted(
         [i for i in range(len(simplified))
          if simplified[i] is not None and _depth(i) % 2 == 0],
@@ -267,35 +281,38 @@ def export_image_svg(
             if simplified[j] is not None and len(simplified[j]) >= 3
         ]
 
-        # Build a sampling mask: outer region minus holes, restricted to opaque px
-        smask = np.zeros((h, w), dtype=np.uint8)
+        # Sample colour from the high-res image using upscaled coordinates so
+        # we get maximum colour accuracy from the supersampled pixels.
+        smask = np.zeros((h_s, w_s), dtype=np.uint8)
         _cv2.fillPoly(
             smask,
-            [np.array([[int(x), int(y)] for x, y in pts_outer], dtype=np.int32)],
+            [np.array([[int(x * _S), int(y * _S)] for x, y in pts_outer], dtype=np.int32)],
             255,
         )
         for hp in hole_pts_list:
             _cv2.fillPoly(
                 smask,
-                [np.array([[int(x), int(y)] for x, y in hp], dtype=np.int32)],
+                [np.array([[int(x * _S), int(y * _S)] for x, y in hp], dtype=np.int32)],
                 0,
             )
 
-        fg = (smask > 0) & (alpha_arr > 64)
+        fg = (smask > 0) & (alpha_hi > 64)
         if fg.sum() < 10:
             continue
 
-        avg  = rgb_arr[fg].mean(axis=0)
+        avg  = rgb_hi[fg].mean(axis=0)
         fill = "#{:02x}{:02x}{:02x}".format(int(avg[0]), int(avg[1]), int(avg[2]))
 
         # Compound path: outer boundary + hole sub-paths.
         # fill-rule="evenodd" punches holes cleanly without needing reversed winding.
+        # A 0.5 px stroke matching the fill closes any sub-pixel seams between
+        # adjacent same-colour shapes without visibly thickening the edges.
         d_parts = [_smooth_d(pts_outer)] + [_smooth_d(hp) for hp in hole_pts_list]
         dwg.add(dwg.path(
             d=" ".join(d_parts),
             fill=fill,
-            stroke="none",
-            **{"fill-rule": "evenodd"},
+            stroke=fill,
+            **{"fill-rule": "evenodd", "stroke-width": "0.5", "stroke-linejoin": "round"},
         ))
 
     dwg.save(pretty=False)
