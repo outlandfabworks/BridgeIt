@@ -157,9 +157,84 @@ def export_svg_string(result: BridgeResult) -> str:
             return f.read()
 
 
+def export_image_svg(
+    nobg_image: "PIL.Image.Image",
+    output_path: str | Path,
+    smoothing: float = 2.0,
+    min_area: float = 50.0,
+) -> Path:
+    """Export the background-removed image as a filled vector SVG.
+
+    Each traced contour is filled with the average colour sampled from that
+    region of the source image, producing a clean coloured vector version of
+    the artwork — useful for logo/graphic conversion rather than laser cutting.
+
+    Args:
+        nobg_image:   RGBA PIL Image with background already removed.
+        output_path:  Where to write the SVG file.
+        smoothing:    Douglas-Peucker simplification factor (higher = smoother).
+        min_area:     Minimum contour area in px² — smaller shapes discarded.
+
+    Returns:
+        Resolved output Path.
+    """
+    from PIL import Image as _PILImage
+    import numpy as np
+    import cv2 as _cv2
+    from bridgeit.pipeline.trace import trace_contours
+
+    if nobg_image.mode != "RGBA":
+        nobg_image = nobg_image.convert("RGBA")
+
+    w, h = nobg_image.size
+    rgb_arr   = np.array(nobg_image.convert("RGB"), dtype=np.uint8)
+    alpha_arr = np.array(nobg_image.split()[3],     dtype=np.uint8)
+
+    paths = trace_contours(nobg_image, smoothing=smoothing, min_area=min_area)
+
+    out = Path(output_path).resolve()
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    dwg = svgwrite.Drawing(filename=str(out), size=(f"{w}px", f"{h}px"), profile="full")
+    dwg.viewbox(0, 0, w, h)
+    dwg.set_desc(title="BridgeIt SVG Image", desc="Filled vector export")
+
+    # White background rectangle
+    dwg.add(dwg.rect(insert=(0, 0), size=(w, h), fill="#ffffff"))
+
+    for path in paths:
+        if len(path) < 3:
+            continue
+
+        d = _path_to_svg_d(path)
+        if not d:
+            continue
+
+        # Sample the average colour of the foreground pixels inside this contour.
+        # Build a binary mask for the contour, then AND with the alpha mask so
+        # we only measure pixels that are actually part of the foreground artwork.
+        pts = np.array([[int(x), int(y)] for x, y in path], dtype=np.int32)
+        mask = np.zeros((h, w), dtype=np.uint8)
+        _cv2.fillPoly(mask, [pts], 255)
+        fg = (mask > 0) & (alpha_arr > 64)
+        if fg.sum() < 10:
+            continue
+
+        avg = rgb_arr[fg].mean(axis=0)
+        r, g, b = int(avg[0]), int(avg[1]), int(avg[2])
+        fill = f"#{r:02x}{g:02x}{b:02x}"
+
+        dwg.add(dwg.path(d=d, fill=fill, stroke="none"))
+
+    dwg.save(pretty=False)
+    return out
+
+
 def _path_to_svg_d(path: Path2D) -> str:
-    # Convert a list of (x, y) tuples into an SVG path data string.
-    # M = moveto (pen-up move to start), L = lineto (draw a line), Z = closepath.
+    """Convert a list of (x, y) tuples into an SVG path data string.
+
+    M = moveto (pen-up move to start), L = lineto (draw a line), Z = closepath.
+    """
     if not path:
         return ""
 

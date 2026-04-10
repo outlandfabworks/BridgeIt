@@ -405,10 +405,18 @@ class MainWindow(QMainWindow):
         self._btn_open.clicked.connect(self._on_open_clicked)
         hlay.addWidget(self._btn_open)
 
-        self._btn_export = self._header_btn("export", "Export SVG  (Ctrl+S)", primary=True)
+        self._btn_export = self._header_btn("export", "Export Cut Paths SVG  (Ctrl+S)", primary=True)
         self._btn_export.setEnabled(False)
         self._btn_export.clicked.connect(self._on_export_clicked)
         hlay.addWidget(self._btn_export)
+
+        self._btn_export_image = self._header_btn(
+            "export_image",
+            "Export SVG Image  — filled coloured vector (for use as a graphic, not laser cutting)",
+        )
+        self._btn_export_image.setEnabled(False)
+        self._btn_export_image.clicked.connect(self._on_export_image_svg)
+        hlay.addWidget(self._btn_export_image)
 
         hlay.addSpacing(4)
         hlay.addWidget(self._header_sep())
@@ -818,6 +826,7 @@ class MainWindow(QMainWindow):
         # Reset canvas-dependent buttons so stale results from a previous image
         # can't be acted on while the new pipeline run is in progress.
         self._btn_export.setEnabled(False)
+        self._btn_export_image.setEnabled(False)
         self._btn_view_svg.setEnabled(False)
         self._btn_delete.setEnabled(False)
         self._btn_add_bridge.setEnabled(False)
@@ -953,6 +962,45 @@ class MainWindow(QMainWindow):
             self._set_status(f"Exported: {written}", success=True)
         except Exception as exc:
             self._set_status(f"Export failed: {exc}", error=True)
+
+    @pyqtSlot()
+    def _on_export_image_svg(self) -> None:
+        """Export the background-removed image as a filled, coloured SVG graphic.
+
+        Unlike the cut-path export, this produces a proper vector image with
+        each shape filled by its sampled colour — suitable for use as a logo
+        or graphic in other applications, not for laser cutting.
+        """
+        if self._nobg_image is None:
+            self._set_status("No image to export — run the pipeline first", error=True)
+            return
+
+        default_name = "image.svg"
+        if self._last_result and self._last_result.source_path:
+            default_name = self._last_result.source_path.with_suffix(".svg").name
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export SVG Image",
+            default_name,
+            "SVG Files (*.svg);;All Files (*)",
+        )
+        if not path:
+            return
+
+        try:
+            from bridgeit.pipeline.export import export_image_svg
+            settings = self._controls.get_settings()
+            self._set_status("Exporting SVG image…")
+            written = export_image_svg(
+                self._nobg_image,
+                path,
+                smoothing=settings.contour_smoothing,
+                min_area=settings.min_contour_area,
+            )
+            self._set_status(f"SVG image exported: {written}", success=True)
+        except Exception as exc:
+            self._set_status(f"SVG image export failed: {exc}", error=True)
 
     @pyqtSlot()
     def _show_original(self) -> None:
@@ -1341,6 +1389,7 @@ class MainWindow(QMainWindow):
         self._controls.update_info(islands, len(self._manual_bridges), paths, result.elapsed_seconds)
 
         self._btn_export.setEnabled(True)
+        self._btn_export_image.setEnabled(True)
         self._btn_erase.setEnabled(True)
         self._btn_crop.setEnabled(True)
         self._controls.set_controls_enabled(True)

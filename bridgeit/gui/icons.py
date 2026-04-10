@@ -147,6 +147,20 @@ _ICONS: dict[str, str] = {
   <circle cx="6"  cy="17" r="1.8" fill="COLOR"/>
   <circle cx="3"  cy="7"  r="1.8" fill="COLOR"/>
 </svg>""",
+
+    # Export SVG Image — filled rectangle with a down-arrow (image/vector export)
+    "export_image": """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none">
+      <rect x="3" y="3" width="10" height="10" rx="1.5"
+            fill="COLOR" opacity="0.35"/>
+      <rect x="3" y="3" width="10" height="10" rx="1.5"
+            stroke="COLOR" stroke-width="1.5"/>
+      <line x1="10" y1="11" x2="10" y2="18"
+            stroke="COLOR" stroke-width="1.5" stroke-linecap="round"/>
+      <polyline points="7,15 10,18 13,15"
+                stroke="COLOR" stroke-width="1.5"
+                stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>""",
 }
 
 # ---------------------------------------------------------------------------
