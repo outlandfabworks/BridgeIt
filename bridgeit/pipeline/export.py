@@ -165,32 +165,41 @@ def export_image_svg(
 ) -> Path:
     """Export the background-removed image as a filled vector SVG.
 
-    Each traced contour is filled with the average colour sampled from that
-    region of the source image, producing a clean coloured vector version of
-    the artwork — useful for logo/graphic conversion rather than laser cutting.
+    Each traced region is filled with the average colour sampled from that area
+    of the source image.  Parent-child contour relationships (from OpenCV's
+    RETR_TREE) are used so that holes — the transparent ring inside a logo
+    circle, letter counters, etc. — are punched out correctly via SVG's
+    evenodd fill rule rather than painted over.  Smooth cubic Bézier curves
+    replace polylines so that circles and arcs look clean at any zoom level.
 
     Args:
         nobg_image:   RGBA PIL Image with background already removed.
         output_path:  Where to write the SVG file.
-        smoothing:    Douglas-Peucker simplification factor (higher = smoother).
+        smoothing:    Douglas-Peucker epsilon factor (higher = fewer points).
         min_area:     Minimum contour area in px² — smaller shapes discarded.
 
     Returns:
         Resolved output Path.
     """
-    from PIL import Image as _PILImage
     import numpy as np
     import cv2 as _cv2
-    from bridgeit.pipeline.trace import trace_contours
+    from bridgeit.pipeline.trace import _extract_alpha
 
     if nobg_image.mode != "RGBA":
         nobg_image = nobg_image.convert("RGBA")
 
     w, h = nobg_image.size
     rgb_arr   = np.array(nobg_image.convert("RGB"), dtype=np.uint8)
-    alpha_arr = np.array(nobg_image.split()[3],     dtype=np.uint8)
+    alpha_arr = np.array(nobg_image.split()[3], dtype=np.uint8)
 
-    paths = trace_contours(nobg_image, smoothing=smoothing, min_area=min_area)
+    # Same binary-mask pre-processing as the cut-path tracer
+    binary = _extract_alpha(nobg_image)
+
+    # RETR_TREE: captures the full parent→child hierarchy so we know which
+    # contours are holes (odd depth) vs filled shapes (even depth).
+    raw_contours, hierarchy = _cv2.findContours(
+        binary, _cv2.RETR_TREE, _cv2.CHAIN_APPROX_TC89_L1
+    )
 
     out = Path(output_path).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -198,33 +207,96 @@ def export_image_svg(
     dwg = svgwrite.Drawing(filename=str(out), size=(f"{w}px", f"{h}px"), profile="full")
     dwg.viewbox(0, 0, w, h)
     dwg.set_desc(title="BridgeIt SVG Image", desc="Filled vector export")
-
-    # White background rectangle
     dwg.add(dwg.rect(insert=(0, 0), size=(w, h), fill="#ffffff"))
 
-    for path in paths:
-        if len(path) < 3:
-            continue
+    if hierarchy is None or len(raw_contours) == 0:
+        dwg.save(pretty=False)
+        return out
 
-        d = _path_to_svg_d(path)
-        if not d:
-            continue
+    hier = hierarchy[0]  # shape (N, 4): [next_sib, prev_sib, first_child, parent]
 
-        # Sample the average colour of the foreground pixels inside this contour.
-        # Build a binary mask for the contour, then AND with the alpha mask so
-        # we only measure pixels that are actually part of the foreground artwork.
-        pts = np.array([[int(x), int(y)] for x, y in path], dtype=np.int32)
-        mask = np.zeros((h, w), dtype=np.uint8)
-        _cv2.fillPoly(mask, [pts], 255)
-        fg = (mask > 0) & (alpha_arr > 64)
+    # Simplify each contour with Douglas-Peucker (proportional epsilon)
+    def _simplify(c):
+        if _cv2.contourArea(c) < min_area:
+            return None
+        if smoothing > 0 and len(c) >= 3:
+            peri = _cv2.arcLength(c, True)
+            eps  = max(0.5, smoothing * peri * 0.001)
+            c = _cv2.approxPolyDP(c, eps, True)
+        return c if len(c) >= 3 else None
+
+    simplified = [_simplify(c) for c in raw_contours]
+
+    def _children(i):
+        """Direct children of contour i (its holes)."""
+        kids, j = [], hier[i][2]
+        while j != -1:
+            kids.append(j)
+            j = hier[j][0]
+        return kids
+
+    def _depth(i):
+        """Nesting depth: 0 = top-level, 1 = hole, 2 = island-in-hole, …"""
+        d, p = 0, hier[i][3]
+        while p != -1:
+            d += 1
+            p = hier[p][3]
+        return d
+
+    def _to_pts(c):
+        return [(float(pt[0][0]), float(pt[0][1])) for pt in c]
+
+    # Even-depth contours (0, 2, 4, …) are filled shapes.
+    # Odd-depth contours are holes — they are included as sub-paths of their
+    # even-depth parent so SVG's evenodd rule punches them out automatically.
+    even_idxs = sorted(
+        [i for i in range(len(simplified))
+         if simplified[i] is not None and _depth(i) % 2 == 0],
+        key=lambda i: _cv2.contourArea(raw_contours[i]),
+        reverse=True,
+    )
+
+    for i in even_idxs:
+        c_outer = simplified[i]
+        pts_outer = _to_pts(c_outer)
+
+        # Collect direct hole children for this shape
+        hole_pts_list = [
+            _to_pts(simplified[j])
+            for j in _children(i)
+            if simplified[j] is not None and len(simplified[j]) >= 3
+        ]
+
+        # Build a sampling mask: outer region minus holes, restricted to opaque px
+        smask = np.zeros((h, w), dtype=np.uint8)
+        _cv2.fillPoly(
+            smask,
+            [np.array([[int(x), int(y)] for x, y in pts_outer], dtype=np.int32)],
+            255,
+        )
+        for hp in hole_pts_list:
+            _cv2.fillPoly(
+                smask,
+                [np.array([[int(x), int(y)] for x, y in hp], dtype=np.int32)],
+                0,
+            )
+
+        fg = (smask > 0) & (alpha_arr > 64)
         if fg.sum() < 10:
             continue
 
-        avg = rgb_arr[fg].mean(axis=0)
-        r, g, b = int(avg[0]), int(avg[1]), int(avg[2])
-        fill = f"#{r:02x}{g:02x}{b:02x}"
+        avg  = rgb_arr[fg].mean(axis=0)
+        fill = "#{:02x}{:02x}{:02x}".format(int(avg[0]), int(avg[1]), int(avg[2]))
 
-        dwg.add(dwg.path(d=d, fill=fill, stroke="none"))
+        # Compound path: outer boundary + hole sub-paths.
+        # fill-rule="evenodd" punches holes cleanly without needing reversed winding.
+        d_parts = [_smooth_d(pts_outer)] + [_smooth_d(hp) for hp in hole_pts_list]
+        dwg.add(dwg.path(
+            d=" ".join(d_parts),
+            fill=fill,
+            stroke="none",
+            **{"fill-rule": "evenodd"},
+        ))
 
     dwg.save(pretty=False)
     return out
@@ -234,6 +306,7 @@ def _path_to_svg_d(path: Path2D) -> str:
     """Convert a list of (x, y) tuples into an SVG path data string.
 
     M = moveto (pen-up move to start), L = lineto (draw a line), Z = closepath.
+    Used for cut-path export where straight segments are correct.
     """
     if not path:
         return ""
@@ -246,6 +319,44 @@ def _path_to_svg_d(path: Path2D) -> str:
         parts.append(f"L {x:.3f} {y:.3f}")
 
     # Z closes the path back to the first point — essential for a filled/cut shape
+    parts.append("Z")
+    return " ".join(parts)
+
+
+def _smooth_d(path: Path2D) -> str:
+    """Convert a closed path to a smooth SVG cubic Bézier string.
+
+    Uses Catmull-Rom → cubic Bézier conversion so the output curves pass
+    through every vertex while remaining C1 continuous (no kinks at corners).
+    This makes circles and arcs look smooth regardless of how many polygon
+    vertices approximate them.
+    """
+    pts = list(path)
+    # Remove the closing duplicate that trace_contours appends
+    if len(pts) >= 2 and pts[0] == pts[-1]:
+        pts = pts[:-1]
+    n = len(pts)
+    if n < 2:
+        return ""
+    if n == 2:
+        return (f"M {pts[0][0]:.2f} {pts[0][1]:.2f} "
+                f"L {pts[1][0]:.2f} {pts[1][1]:.2f} Z")
+
+    parts = [f"M {pts[0][0]:.2f} {pts[0][1]:.2f}"]
+    for i in range(n):
+        p0 = pts[(i - 1) % n]
+        p1 = pts[i]
+        p2 = pts[(i + 1) % n]
+        p3 = pts[(i + 2) % n]
+        # Catmull-Rom → cubic Bézier control points for the segment p1 → p2
+        cp1x = p1[0] + (p2[0] - p0[0]) / 6.0
+        cp1y = p1[1] + (p2[1] - p0[1]) / 6.0
+        cp2x = p2[0] - (p3[0] - p1[0]) / 6.0
+        cp2y = p2[1] - (p3[1] - p1[1]) / 6.0
+        parts.append(
+            f"C {cp1x:.2f} {cp1y:.2f} {cp2x:.2f} {cp2y:.2f} "
+            f"{p2[0]:.2f} {p2[1]:.2f}"
+        )
     parts.append("Z")
     return " ".join(parts)
 
