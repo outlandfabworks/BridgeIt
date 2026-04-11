@@ -340,16 +340,17 @@ def _path_to_svg_d(path: Path2D) -> str:
     return " ".join(parts)
 
 
-def _smooth_d(path: Path2D) -> str:
-    """Convert a closed path to a smooth SVG cubic Bézier string.
+def _smooth_d(path: Path2D, iterations: int = 4) -> str:
+    """Convert a closed path to a smooth SVG path using Chaikin corner-cutting.
 
-    Uses Catmull-Rom → cubic Bézier conversion so the output curves pass
-    through every vertex while remaining C1 continuous (no kinks at corners).
-    This makes circles and arcs look smooth regardless of how many polygon
-    vertices approximate them.
+    Each iteration replaces every segment with two new points at the ¼ and ¾
+    positions, iteratively rounding all corners.  After 4 iterations the point
+    count is 16× the original, and any staircase or angular vertex is smoothed
+    away.  Unlike Catmull-Rom, Chaikin never overshoots the original polygon
+    — so pixel-grid staircase contours produce smooth curves with no waves or
+    oscillations.
     """
     pts = list(path)
-    # Remove the closing duplicate that trace_contours appends
     if len(pts) >= 2 and pts[0] == pts[-1]:
         pts = pts[:-1]
     n = len(pts)
@@ -359,21 +360,19 @@ def _smooth_d(path: Path2D) -> str:
         return (f"M {pts[0][0]:.2f} {pts[0][1]:.2f} "
                 f"L {pts[1][0]:.2f} {pts[1][1]:.2f} Z")
 
+    for _ in range(iterations):
+        new_pts: list = []
+        m = len(pts)
+        for i in range(m):
+            p1 = pts[i]
+            p2 = pts[(i + 1) % m]
+            new_pts.append((0.75 * p1[0] + 0.25 * p2[0], 0.75 * p1[1] + 0.25 * p2[1]))
+            new_pts.append((0.25 * p1[0] + 0.75 * p2[0], 0.25 * p1[1] + 0.75 * p2[1]))
+        pts = new_pts
+
     parts = [f"M {pts[0][0]:.2f} {pts[0][1]:.2f}"]
-    for i in range(n):
-        p0 = pts[(i - 1) % n]
-        p1 = pts[i]
-        p2 = pts[(i + 1) % n]
-        p3 = pts[(i + 2) % n]
-        # Catmull-Rom → cubic Bézier control points for the segment p1 → p2
-        cp1x = p1[0] + (p2[0] - p0[0]) / 6.0
-        cp1y = p1[1] + (p2[1] - p0[1]) / 6.0
-        cp2x = p2[0] - (p3[0] - p1[0]) / 6.0
-        cp2y = p2[1] - (p3[1] - p1[1]) / 6.0
-        parts.append(
-            f"C {cp1x:.2f} {cp1y:.2f} {cp2x:.2f} {cp2y:.2f} "
-            f"{p2[0]:.2f} {p2[1]:.2f}"
-        )
+    for x, y in pts[1:]:
+        parts.append(f"L {x:.2f} {y:.2f}")
     parts.append("Z")
     return " ".join(parts)
 
