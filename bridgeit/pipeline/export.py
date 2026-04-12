@@ -232,10 +232,16 @@ def export_image_svg(
     def _simplify(c):
         if _cv2.contourArea(c) < area_hi:
             return None
-        if smoothing > 0 and len(c) >= 3:
-            peri = _cv2.arcLength(c, True)
-            eps  = max(0.5, smoothing * peri * 0.001)
-            c = _cv2.approxPolyDP(c, eps, True)
+        if len(c) >= 3:
+            # Use a fixed absolute 1 px epsilon in the hi-res space (= 0.5 px in
+            # original coordinates with 2× supersampling).  A proportional epsilon
+            # (the cut-path default) gives the same visual smoothness at every
+            # zoom level but produces far too few vertices for large circles —
+            # with smoothing=2.0 a 500 px-radius circle would get only ~22
+            # vertices → ~352 Chaikin segments → 4.5 px per segment → visible
+            # polygon facets.  An absolute 1 px eps gives ~70 vertices →
+            # 1120 segments → 1.4 px each → sub-pixel-smooth at normal size.
+            c = _cv2.approxPolyDP(c, 1.0, True)
         return c if len(c) >= 3 else None
 
     simplified = [_simplify(c) for c in raw_contours]
