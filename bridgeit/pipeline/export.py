@@ -349,13 +349,15 @@ def _path_to_svg_d(path: Path2D) -> str:
 def _smooth_d(path: Path2D, iterations: int = 4) -> str:
     """Convert a closed path to a smooth SVG path using Chaikin corner-cutting.
 
-    Each iteration replaces every segment with two new points at the ¼ and ¾
-    positions, iteratively rounding all corners.  After 4 iterations the point
-    count is 16× the original, and any staircase or angular vertex is smoothed
-    away.  Unlike Catmull-Rom, Chaikin never overshoots the original polygon
-    — so pixel-grid staircase contours produce smooth curves with no waves or
-    oscillations.
+    Vertices are first redistributed at uniform arc-length spacing before the
+    corner-cutting iterations.  Without this step, clusters of closely-spaced
+    staircase vertices (dense on horizontal/vertical circle sections, sparse at
+    45° diagonals) cause uneven corner-cutting that manifests as visible ripples
+    on otherwise smooth curves.  Uniform spacing ensures the Chaikin limit curve
+    has consistent curvature throughout.
     """
+    import math
+
     pts = list(path)
     if len(pts) >= 2 and pts[0] == pts[-1]:
         pts = pts[:-1]
@@ -366,6 +368,37 @@ def _smooth_d(path: Path2D, iterations: int = 4) -> str:
         return (f"M {pts[0][0]:.2f} {pts[0][1]:.2f} "
                 f"L {pts[1][0]:.2f} {pts[1][1]:.2f} Z")
 
+    # ── Step 1: uniform arc-length resampling ────────────────────────────
+    # Resample the polygon at n equally-spaced positions along its perimeter
+    # so that Chaikin applies evenly everywhere.
+    closed = pts + [pts[0]]
+    cumlen = [0.0]
+    for i in range(len(closed) - 1):
+        dx = closed[i + 1][0] - closed[i][0]
+        dy = closed[i + 1][1] - closed[i][1]
+        cumlen.append(cumlen[-1] + math.hypot(dx, dy))
+    total = cumlen[-1]
+
+    if total > 1e-6:
+        step = total / n
+        target = 0.0
+        resampled: list = []
+        seg = 0
+        for _ in range(n):
+            while seg + 1 < len(cumlen) - 1 and cumlen[seg + 1] < target:
+                seg += 1
+            seg_len = cumlen[seg + 1] - cumlen[seg]
+            t = (target - cumlen[seg]) / seg_len if seg_len > 1e-9 else 0.0
+            resampled.append((
+                closed[seg][0] + t * (closed[seg + 1][0] - closed[seg][0]),
+                closed[seg][1] + t * (closed[seg + 1][1] - closed[seg][1]),
+            ))
+            target += step
+        pts = resampled
+
+    # ── Step 2: Chaikin corner-cutting ───────────────────────────────────
+    # With uniform spacing the subdivision is even and the resulting
+    # quadratic B-spline has no curvature ripples.
     for _ in range(iterations):
         new_pts: list = []
         m = len(pts)
