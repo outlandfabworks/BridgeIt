@@ -233,15 +233,10 @@ def export_image_svg(
         if _cv2.contourArea(c) < area_hi:
             return None
         if len(c) >= 3:
-            # Use a fixed absolute 1 px epsilon in the hi-res space (= 0.5 px in
-            # original coordinates with 2× supersampling).  A proportional epsilon
-            # (the cut-path default) gives the same visual smoothness at every
-            # zoom level but produces far too few vertices for large circles —
-            # with smoothing=2.0 a 500 px-radius circle would get only ~22
-            # vertices → ~352 Chaikin segments → 4.5 px per segment → visible
-            # polygon facets.  An absolute 1 px eps gives ~70 vertices →
-            # 1120 segments → 1.4 px each → sub-pixel-smooth at normal size.
-            c = _cv2.approxPolyDP(c, 1.0, True)
+            # 0.5 px absolute epsilon in hi-res space (= 0.25 px in original at 2×).
+            # Halving from 1.0 doubles the vertex count (~140 for a 500 px circle
+            # vs ~70 before), halving the chord deviation → ripples are smaller.
+            c = _cv2.approxPolyDP(c, 0.5, True)
         return c if len(c) >= 3 else None
 
     simplified = [_simplify(c) for c in raw_contours]
@@ -369,8 +364,12 @@ def _smooth_d(path: Path2D, iterations: int = 4) -> str:
                 f"L {pts[1][0]:.2f} {pts[1][1]:.2f} Z")
 
     # ── Step 1: uniform arc-length resampling ────────────────────────────
-    # Resample the polygon at n equally-spaced positions along its perimeter
-    # so that Chaikin applies evenly everywhere.
+    # Resample to at least 256 points at equal arc-length spacing.
+    # Two benefits: (a) uniform spacing removes ripples from uneven staircase
+    # vertex density; (b) more control points → denser Chaikin B-spline →
+    # less deviation between the B-spline and the polygon it approximates.
+    # Cap at 512 to keep file sizes reasonable for complex shapes.
+    resample_n = max(256, min(n, 512))
     closed = pts + [pts[0]]
     cumlen = [0.0]
     for i in range(len(closed) - 1):
@@ -380,11 +379,11 @@ def _smooth_d(path: Path2D, iterations: int = 4) -> str:
     total = cumlen[-1]
 
     if total > 1e-6:
-        step = total / n
+        step = total / resample_n
         target = 0.0
         resampled: list = []
         seg = 0
-        for _ in range(n):
+        for _ in range(resample_n):
             while seg + 1 < len(cumlen) - 1 and cumlen[seg + 1] < target:
                 seg += 1
             seg_len = cumlen[seg + 1] - cumlen[seg]
