@@ -67,14 +67,12 @@ def export_svg(
         **{"stroke-width": stroke_width, "stroke-linecap": "round", "stroke-linejoin": "round"},
     )
 
-    # Add each path to the group — each path becomes one SVG <path> element
+    # Add each path to the group, smoothed with Chaikin so circles and curves
+    # look clean rather than as polygonal approximations of the traced contour.
     for i, path in enumerate(result.paths):
         if len(path) < 2:
-            continue  # skip degenerate paths that can't form a visible stroke
-
-        # _path_to_svg_d converts our list of (x,y) tuples into SVG path data
-        # like "M 10.000 20.000 L 30.000 40.000 Z"
-        cut_group.add(dwg.path(d=_path_to_svg_d(path), id=f"path_{i}"))
+            continue
+        cut_group.add(dwg.path(d=_smooth_d(list(path)), id=f"path_{i}"))
 
     dwg.add(cut_group)
 
@@ -110,7 +108,7 @@ def make_preview_svg(result: BridgeResult) -> str:
     for i, path in enumerate(result.paths):
         if len(path) < 2:
             continue
-        cut_group.add(dwg.path(d=_path_to_svg_d(path), id=f"path_{i}"))
+        cut_group.add(dwg.path(d=_smooth_d(list(path)), id=f"path_{i}"))
     dwg.add(cut_group)
 
     # Overlay green markers wherever bridges connect islands to the design.
