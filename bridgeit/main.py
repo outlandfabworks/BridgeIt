@@ -9,7 +9,33 @@ Supports two modes:
 
 from __future__ import annotations
 
+import logging
 import sys
+
+# Configure root logger: INFO to stderr so users can capture diagnostics with
+# `bridgeit 2>bridgeit.log`.  Only set up when this module initialises (not on
+# every import) so library users aren't affected.
+logging.basicConfig(
+    format="%(levelname)s %(name)s: %(message)s",
+    level=logging.INFO,
+)
+
+
+def _init_theme_from_system(app) -> None:
+    """Set the initial BridgeIt theme based on the OS colour scheme.
+
+    Uses Qt's StyleHints.colorScheme() (available in Qt 6.5+).  On older Qt
+    or platforms that don't expose the setting, we keep the default "dark" theme.
+    """
+    try:
+        from PyQt6.QtCore import Qt
+        from bridgeit.gui import themes
+        scheme = app.styleHints().colorScheme()
+        if scheme == Qt.ColorScheme.Light:
+            themes._current = "light"
+        # Dark and Unknown → keep default "dark"
+    except Exception:
+        pass   # any failure is non-fatal; theme stays at "dark"
 
 
 def _run_gui() -> None:
@@ -62,6 +88,11 @@ def _run_gui() -> None:
 
     # Apply our palette so the entire application uses the dark theme
     app.setPalette(palette)
+
+    # Pick the initial theme based on the OS colour scheme so the app feels
+    # at home on both dark and light desktops.  Falls back to "dark" on any
+    # platform that doesn't expose this information.
+    _init_theme_from_system(app)
 
     # Create and display the main window
     window = MainWindow()

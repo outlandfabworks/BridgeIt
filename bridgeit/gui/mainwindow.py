@@ -14,9 +14,12 @@ Processing runs in a QThread worker so the UI never blocks.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Optional
+
+_LOG = logging.getLogger(__name__)
 
 from PIL import Image
 from PyQt6.QtCore import QObject, QThread, QTimer, Qt, QSize, pyqtSignal, pyqtSlot
@@ -26,6 +29,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QFrame,
     QHBoxLayout,
+    QMenu,
     QMessageBox,
     QVBoxLayout,
     QLabel,
@@ -250,6 +254,12 @@ class MainWindow(QMainWindow):
         self._settings_timer.setInterval(250)       # 250ms delay
         self._settings_timer.timeout.connect(self._on_settings_debounced)
 
+        # Auto-clear success/info status messages after 8 s; errors persist until next action.
+        self._status_clear_timer = QTimer()
+        self._status_clear_timer.setSingleShot(True)
+        self._status_clear_timer.setInterval(8000)
+        self._status_clear_timer.timeout.connect(self._on_status_timeout)
+
         # Tracks every icon button so _apply_theme() can re-render their icons
         # when the user cycles themes.  Each entry is (button, icon_name, is_primary).
         self._icon_btns: list[tuple] = []
@@ -464,12 +474,12 @@ class MainWindow(QMainWindow):
         hlay.addWidget(self._header_sep())
         hlay.addSpacing(4)
 
-        self._btn_erase = self._header_btn("erase", "Erase Background  — click to enter erase mode")
+        self._btn_erase = self._header_btn("erase", "Erase Background  — click to enter erase mode  · right-click to clear")
         self._btn_erase.setEnabled(False)
         self._btn_erase.setCheckable(True)
         self._btn_erase.clicked.connect(self._on_toggle_erase_mode)
         self._btn_erase.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self._btn_erase.customContextMenuRequested.connect(lambda _: self._on_erase_clear())
+        self._btn_erase.customContextMenuRequested.connect(self._on_erase_context_menu)
         hlay.addWidget(self._btn_erase)
 
         self._btn_crop = self._header_btn(
@@ -862,6 +872,7 @@ class MainWindow(QMainWindow):
             self._preview.show_image_from_pil(orig)
             self._btn_view_image.setEnabled(True)
         except Exception as exc:
+            _LOG.exception("Failed to open image: %s", path)
             self._source_image = None
             self._set_status(f"Could not open image: {exc}", error=True)
             return
@@ -966,6 +977,7 @@ class MainWindow(QMainWindow):
             written = export_svg(modified_br, path)
             self._set_status(f"Exported: {written}", success=True)
         except Exception as exc:
+            _LOG.exception("SVG export failed")
             self._set_status(f"Export failed: {exc}", error=True)
 
     @pyqtSlot()
@@ -1005,6 +1017,7 @@ class MainWindow(QMainWindow):
             )
             self._set_status(f"SVG image exported: {written}", success=True)
         except Exception as exc:
+            _LOG.exception("SVG image export failed")
             self._set_status(f"SVG image export failed: {exc}", error=True)
 
     @pyqtSlot()
@@ -1524,6 +1537,20 @@ class MainWindow(QMainWindow):
                 self._preview.show_image_from_pil(self._nobg_image)
 
     @pyqtSlot()
+    def _on_erase_context_menu(self, pos) -> None:
+        """Show context menu on right-click of the Erase button."""
+        t = current_theme()
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            f"QMenu {{ background: {t['surface']}; color: {t['text']}; border: 1px solid {t['border']}; }}"
+            f"QMenu::item:selected {{ background: {t['accent']}; color: #fff; }}"
+        )
+        clear_act = menu.addAction("Clear erase colours")
+        clear_act.setEnabled(bool(self._erase_colors))
+        chosen = menu.exec(self._btn_erase.mapToGlobal(pos))
+        if chosen == clear_act:
+            self._on_erase_clear()
+
     def _on_erase_clear(self) -> None:
         """Clear all sampled erase colours and revert to automatic background removal."""
         if not self._erase_colors:
@@ -1637,11 +1664,26 @@ class MainWindow(QMainWindow):
             message: Text to show.
             success: If True, colour the text green (done / exported successfully).
             error:   If True, colour the text red (something went wrong).
+
+        Success/info messages auto-clear after 8 s; error messages persist until
+        the next action so the user has time to read them.
         """
         t = current_theme()
         color = t["success"] if success else (t["error"] if error else t["text_muted"])
         self._status_label.setStyleSheet(f"color: {color}; font-size: 11px; padding: 0;")
         self._status_label.setText(message)
+        # Auto-clear non-error messages; cancel any pending clear on errors so they stick.
+        if error:
+            self._status_clear_timer.stop()
+        else:
+            self._status_clear_timer.start()
+
+    @pyqtSlot()
+    def _on_status_timeout(self) -> None:
+        """Fade out the status bar text after the auto-clear delay."""
+        t = current_theme()
+        self._status_label.setStyleSheet(f"color: {t['text_muted']}; font-size: 11px; padding: 0;")
+        self._status_label.setText("")
 
     @property
     def _bridges(self):
