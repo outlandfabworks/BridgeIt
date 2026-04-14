@@ -863,7 +863,10 @@ class MainWindow(QMainWindow):
             import os as _os
             _MAX_FILE_BYTES = 50 * 1024 * 1024  # 50 MB
             if _os.path.getsize(path) > _MAX_FILE_BYTES:
-                self._set_status("File too large — please use an image under 50 MB", error=True)
+                self._set_status(
+                    "File too large (limit: 50 MB) — resize the image or reduce its resolution first",
+                    error=True,
+                )
                 return
             from PIL import Image as _Image
             orig = _Image.open(path)
@@ -1165,7 +1168,32 @@ class MainWindow(QMainWindow):
             canvas.confirm_staged_bridges()
             return
         if canvas.mode == CanvasMode.BRIDGE:
-            # Already in bridge mode — cancel and return to select mode
+            # If there are staged bridges, ask before discarding them
+            n = canvas.staged_count
+            if n > 0:
+                dlg = QMessageBox(self)
+                dlg.setWindowTitle("Staged Bridges")
+                dlg.setText(
+                    f"You have {n} staged bridge{'s' if n != 1 else ''} "
+                    "that haven't been confirmed yet."
+                )
+                confirm_btn = dlg.addButton("Confirm & Exit", QMessageBox.ButtonRole.AcceptRole)
+                discard_btn = dlg.addButton("Discard & Exit", QMessageBox.ButtonRole.DestructiveRole)
+                dlg.addButton("Keep Placing", QMessageBox.ButtonRole.RejectRole)
+                dlg.setDefaultButton(confirm_btn)
+                _apply_dialog_theme(dlg)
+                dlg.exec()
+                clicked = dlg.clickedButton()
+                if clicked == confirm_btn:
+                    canvas.confirm_staged_bridges()
+                    canvas.set_mode(CanvasMode.SELECT)
+                    self._btn_add_bridge.setChecked(False)
+                elif clicked == discard_btn:
+                    canvas.set_mode(CanvasMode.SELECT)
+                    self._btn_add_bridge.setChecked(False)
+                # "Keep Placing" → do nothing, stay in bridge mode
+                return
+            # No staged bridges — exit quietly
             canvas.set_mode(CanvasMode.SELECT)
             self._btn_add_bridge.setChecked(False)
         else:
@@ -1476,6 +1504,21 @@ class MainWindow(QMainWindow):
         if not suggestions:
             self._set_status("No islands detected — no bridges to suggest")
             return
+        # Warn if existing staged bridges would be replaced
+        if canvas.staged_count > 0:
+            n = canvas.staged_count
+            dlg = QMessageBox(self)
+            dlg.setWindowTitle("Replace Staged Bridges?")
+            dlg.setText(
+                f"Auto Bridge will replace your {n} staged bridge{'s' if n != 1 else ''} "
+                "with new suggestions."
+            )
+            replace_btn = dlg.addButton("Replace", QMessageBox.ButtonRole.DestructiveRole)
+            dlg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+            _apply_dialog_theme(dlg)
+            dlg.exec()
+            if dlg.clickedButton() != replace_btn:
+                return
         from bridgeit.pipeline.bridge import mm_to_px
         canvas.bridge_width_px = mm_to_px(self._controls.get_settings().bridge_width_mm)
         canvas.load_auto_bridge_suggestions(suggestions)
@@ -1507,7 +1550,7 @@ class MainWindow(QMainWindow):
             tip = (
                 "Erase mode — click background areas to sample colours.  "
                 f"({n} colour{'s' if n != 1 else ''} sampled)  "
-                "Click again to finish; right-click to clear all colours."
+                "Click this button again to finish; right-click to clear all colours."
             )
             self._btn_erase.setToolTip(tip)
             if n:
