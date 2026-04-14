@@ -20,7 +20,7 @@ from typing import Optional
 
 from PIL import Image
 from PyQt6.QtCore import QObject, QThread, QTimer, Qt, QSize, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QAction, QColor, QFont, QKeySequence, QPalette, QShortcut
+from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QKeySequence, QPalette, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -276,6 +276,11 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
         self.setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
         self.resize(1280, 780)
+
+        # Set window icon from bundled assets
+        _icon_path = Path(__file__).parent.parent / "assets" / "icon.png"
+        if _icon_path.exists():
+            self.setWindowIcon(QIcon(str(_icon_path)))
 
     # ------------------------------------------------------------------
     # UI construction
@@ -1406,11 +1411,19 @@ class MainWindow(QMainWindow):
     @pyqtSlot(str)
     def _on_pipeline_error(self, message: str) -> None:
         self._set_busy(False)
+        # If a previous successful result exists, re-enable the export and editing
+        # buttons so the user can still work with the last good output without
+        # restarting the app.
+        if self._last_result:
+            self._btn_export.setEnabled(True)
+            self._btn_export_image.setEnabled(True)
+            self._btn_erase.setEnabled(True)
+            self._btn_crop.setEnabled(True)
+            self._controls.set_controls_enabled(True)
         self._show_pipeline_error(message)
 
     def _show_pipeline_error(self, message: str) -> None:
         """Show a pipeline error in a themed QMessageBox with traceback in Details."""
-        self._set_busy(False)
         lines = message.strip().splitlines()
         summary = lines[0] if lines else "An unknown error occurred"
         self._set_status(f"Error: {summary}", error=True)

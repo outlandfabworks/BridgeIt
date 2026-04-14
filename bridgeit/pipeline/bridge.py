@@ -157,7 +157,9 @@ def _bridge_island(
                 poly = poly.buffer(0)
             if poly.contains(centroid):
                 containing.append((poly.area, i))
-        except Exception:
+        except Exception as _e:
+            import warnings
+            warnings.warn(f"Bridge geometry error (containment check path {i}): {_e}", RuntimeWarning, stacklevel=2)
             continue
 
     if containing:
@@ -171,8 +173,10 @@ def _bridge_island(
             best_island_pt = (p_island.x, p_island.y)
             best_target_pt = (p_target.x, p_target.y)
             best_target_idx = target_idx
-        except Exception:
-            pass   # fall through to pass 2
+        except Exception as _e:
+            import warnings
+            warnings.warn(f"Bridge geometry error (nearest-points pass 1): {_e}", RuntimeWarning, stacklevel=2)
+            # fall through to pass 2
 
     # ── Pass 2: no containing path — centroid-guided nearest-path search ──
     if best_island_pt is None:
@@ -185,7 +189,9 @@ def _bridge_island(
                 _, p_target = nearest_points(centroid, target_line)
                 p_island, _ = nearest_points(island_line, p_target)
                 dist = p_island.distance(p_target)
-            except Exception:
+            except Exception as _e:
+                import warnings
+                warnings.warn(f"Bridge geometry error (nearest-points pass 2, path {i}): {_e}", RuntimeWarning, stacklevel=2)
                 continue
             if dist < best_dist:
                 best_dist = dist
