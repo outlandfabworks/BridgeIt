@@ -1105,7 +1105,7 @@ class MainWindow(QMainWindow):
                 ("Click staged bridge",   "Select staged bridge"),
                 ("Delete",                "Remove selected staged bridge"),
                 ("Enter",                 "Confirm all staged bridges"),
-                ("Escape",                "Cancel pending point → clear staged → exit"),
+                ("Escape",                "Cancel pending point / discard staged / exit mode"),
             ]),
         ]
 
@@ -1269,7 +1269,7 @@ class MainWindow(QMainWindow):
             # First point placed — prompt for second click
             self._bridge_confirming = False
             self._btn_add_bridge.setChecked(True)
-            self._btn_add_bridge.setToolTip("Cancel Bridge Mode  (Escape)")
+            self._btn_add_bridge.setToolTip("Cancel point  (Escape)")
             self._set_status(
                 "Click second point to complete bridge  ·  hold Shift for straight lines"
             )
@@ -1277,7 +1277,7 @@ class MainWindow(QMainWindow):
             # Entered bridge mode — prompt for first click
             self._bridge_confirming = False
             self._btn_add_bridge.setChecked(True)
-            self._btn_add_bridge.setToolTip("Cancel Bridge Mode  (Escape)")
+            self._btn_add_bridge.setToolTip("Exit Bridge Mode  (Escape)")
             self._set_status(
                 "Click a point on a path to start a bridge  ·  hold Shift for straight lines"
             )

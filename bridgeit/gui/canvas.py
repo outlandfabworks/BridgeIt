@@ -60,7 +60,8 @@ _COL_BRIDGE      = QColor("#22c55e")   # green  — auto bridge marker
 _COL_BRIDGE_SEL  = QColor("#ef4444")   # red    — selected bridge
 _COL_STAGED_SEL  = QColor("#f59e0b")   # amber  — selected staged bridge
 _COL_PENDING     = QColor("#fbbf24")   # yellow — first bridge click dot
-_COL_SNAP        = QColor("#ffffff")   # white  — snap indicator
+_COL_SNAP        = QColor("#ffffff")   # white  — snap dot: waiting for pt1
+_COL_SNAP_PT2    = QColor("#fb923c")   # orange — snap dot: waiting for pt2 (complete bridge)
 def _canvas_bg() -> QColor:
     """Return the canvas background colour from the active theme (called lazily)."""
     return QColor(current_theme()["canvas_bg"])
@@ -1050,14 +1051,29 @@ class InteractiveCanvas(QGraphicsView):
 
     def _update_snap_dot(self, pt: Tuple[float, float]) -> None:
         r = float(_SNAP_R)
+        # Choose color based on whether pt1 has been placed:
+        # white = "click to start a bridge", orange = "click to complete the bridge"
+        has_pt1 = self._bridge_pt1 is not None
+        col = _COL_SNAP_PT2 if has_pt1 else _COL_SNAP
+        fill = QColor(col.red(), col.green(), col.blue(), 60)
         if self._snap_dot is None:
             self._snap_dot = self._scene.addEllipse(
                 pt[0] - r, pt[1] - r, r * 2, r * 2,
-                QPen(_COL_SNAP, 1.5),
-                QBrush(QColor(255, 255, 255, 60)),
+                QPen(col, 1.5),
+                QBrush(fill),
             )
         else:
-            self._snap_dot.setRect(pt[0] - r, pt[1] - r, r * 2, r * 2)
+            # Recreate if the pt1-state changed so the colour updates immediately
+            if getattr(self._snap_dot, "_has_pt1", None) != has_pt1:
+                self._scene.removeItem(self._snap_dot)
+                self._snap_dot = self._scene.addEllipse(
+                    pt[0] - r, pt[1] - r, r * 2, r * 2,
+                    QPen(col, 1.5),
+                    QBrush(fill),
+                )
+            else:
+                self._snap_dot.setRect(pt[0] - r, pt[1] - r, r * 2, r * 2)
+        self._snap_dot._has_pt1 = has_pt1
 
     def _hide_snap_dot(self) -> None:
         if self._snap_dot is not None:
