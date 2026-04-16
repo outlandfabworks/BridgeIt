@@ -1,0 +1,126 @@
+name: Build Distributable
+
+on:
+  push:
+    tags:
+      - 'v*'          # Run on version tags: v0.6.0, v1.0.0, etc.
+  workflow_dispatch:  # Allow manual trigger from the Actions tab
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            name: linux
+            artifact: BridgeIt-linux.tar.gz
+          - os: macos-13          # x86_64 (Rosetta runs on M-series too)
+            name: macos
+            artifact: BridgeIt-macos.dmg
+          - os: windows-latest
+            name: windows
+            artifact: BridgeIt-windows.zip
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.name }})
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+
+      # ── macOS: generate .icns from the PNG icon ─────────────────────────
+      - name: Generate icon.icns (macOS only)
+        if: matrix.name == 'macos'
+        run: |
+          mkdir -p /tmp/icon.iconset
+          for size in 16 32 128 256 512; do
+            cp bridgeit/assets/icon_${size}.png /tmp/icon.iconset/icon_${size}x${size}.png
+            cp bridgeit/assets/icon_${size}.png /tmp/icon.iconset/icon_${size}x${size}@2x.png
+          done
+          iconutil -c icns /tmp/icon.iconset -o bridgeit/assets/icon.icns
+
+      # ── Linux: install Qt XCB platform dependencies ──────────────────────
+      - name: Install Qt XCB libs (Linux only)
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
+            libxcb-xkb1 libxkbcommon-x11-0 libegl1
+
+      - name: Build with PyInstaller
+        run: pyinstaller bridgeit.spec --noconfirm --clean
+
+      # ── Linux: package as tar.gz ─────────────────────────────────────────
+      - name: Package (Linux)
+        if: matrix.name == 'linux'
+        run: |
+          cd dist
+          tar -czf ../${{ matrix.artifact }} BridgeIt/
+
+      # ── macOS: create .dmg ───────────────────────────────────────────────
+      - name: Package (macOS)
+        if: matrix.name == 'macos'
+        run: |
+          pip install dmgbuild
+          cat > /tmp/dmg_settings.py << 'EOF'
+          import os
+          application = defines.get('app', 'dist/BridgeIt.app')
+          appname = os.path.basename(application)
+          files = [application]
+          symlinks = {'Applications': '/Applications'}
+          icon_locations = {appname: (140, 120), 'Applications': (360, 120)}
+          background = 'builtin-arrow'
+          window_rect = ((100, 100), (500, 300))
+          icon_size = 80
+          EOF
+          dmgbuild -s /tmp/dmg_settings.py -D app=dist/BridgeIt.app "BridgeIt" ${{ matrix.artifact }}
+
+      # ── Windows: package as zip ──────────────────────────────────────────
+      - name: Package (Windows)
+        if: matrix.name == 'windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist\BridgeIt -DestinationPath ${{ matrix.artifact }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+          retention-days: 30
+
+  # ── Create GitHub Release when triggered by a version tag ─────────────────
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            BridgeIt-linux.tar.gz/BridgeIt-linux.tar.gz
+            BridgeIt-macos.dmg/BridgeIt-macos.dmg
+            BridgeIt-windows.zip/BridgeIt-windows.zip
