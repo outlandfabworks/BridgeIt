@@ -502,6 +502,10 @@ class MainWindow(QMainWindow):
         btn_help.clicked.connect(self._show_shortcuts)
         hlay.addWidget(btn_help)
 
+        btn_about = self._header_btn("about", "About BridgeIt / Support")
+        btn_about.clicked.connect(self._show_about)
+        hlay.addWidget(btn_about)
+
         return header
 
     def _header_sep(self) -> QWidget:
@@ -979,6 +983,7 @@ class MainWindow(QMainWindow):
             )
             written = export_svg(modified_br, path)
             self._set_status(f"Exported: {written}", success=True)
+            self._maybe_show_donation_prompt()
         except Exception as exc:
             _LOG.exception("SVG export failed")
             self._set_status(f"Export failed: {exc}", error=True)
@@ -1727,6 +1732,148 @@ class MainWindow(QMainWindow):
         t = current_theme()
         self._status_label.setStyleSheet(f"color: {t['text_muted']}; font-size: 11px; padding: 0;")
         self._status_label.setText("")
+
+    def _maybe_show_donation_prompt(self) -> None:
+        """Show a one-time donation prompt after every 3rd successful export.
+
+        Uses QSettings to persist the export count and whether the user has
+        permanently dismissed the prompt.
+        """
+        from PyQt6.QtCore import QSettings
+        s = QSettings("OutlandFabworks", "BridgeIt")
+        if s.value("donation/dismissed", False, type=bool):
+            return
+        count = s.value("donation/export_count", 0, type=int) + 1
+        s.setValue("donation/export_count", count)
+        if count % 3 != 0:
+            return
+        self._show_donation_prompt()
+
+    def _show_donation_prompt(self) -> None:
+        from PyQt6.QtCore import QSettings, QUrl
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout, QHBoxLayout
+
+        t = current_theme()
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Enjoying BridgeIt?")
+        dlg.setFixedWidth(400)
+        dlg.setStyleSheet(
+            f"QDialog {{ background: {t['card_bg'] if 'card_bg' in t else t['sidebar_bg']}; "
+            f"color: {t['text']}; }} "
+            f"QLabel {{ color: {t['text']}; }} "
+            f"QPushButton {{ padding: 6px 14px; border-radius: 6px; "
+            f"background: {t['surface']}; color: {t['text']}; border: 1px solid {t['border']}; }} "
+            f"QPushButton#donate {{ background: {t['accent']}; color: #fff; border: none; }}"
+        )
+
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(12)
+
+        from PyQt6.QtWidgets import QLabel
+        title = QLabel("If BridgeIt is saving you time, consider buying me a coffee.")
+        title.setWordWrap(True)
+        title.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {t['text']};")
+        layout.addWidget(title)
+
+        sub = QLabel(
+            "BridgeIt is free and always will be. A small donation helps keep it maintained and improved."
+        )
+        sub.setWordWrap(True)
+        sub.setStyleSheet(f"font-size: 11px; color: {t['text_muted']};")
+        layout.addWidget(sub)
+
+        layout.addSpacing(4)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
+        btn_donate = QPushButton("Support BridgeIt")
+        btn_donate.setObjectName("donate")
+        btn_donate.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        btn_later = QPushButton("Maybe later")
+        btn_dismiss = QPushButton("Don't ask again")
+
+        for b in (btn_donate, btn_later, btn_dismiss):
+            btn_row.addWidget(b)
+
+        layout.addLayout(btn_row)
+
+        def _on_donate():
+            QDesktopServices.openUrl(QUrl("https://ko-fi.com/outlandfabworks"))
+            dlg.accept()
+
+        def _on_dismiss():
+            from PyQt6.QtCore import QSettings
+            QSettings("OutlandFabworks", "BridgeIt").setValue("donation/dismissed", True)
+            dlg.reject()
+
+        btn_donate.clicked.connect(_on_donate)
+        btn_later.clicked.connect(dlg.reject)
+        btn_dismiss.clicked.connect(_on_dismiss)
+
+        dlg.exec()
+
+    def _show_about(self) -> None:
+        from PyQt6.QtCore import QUrl
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel
+
+        t = current_theme()
+        dlg = QDialog(self)
+        dlg.setWindowTitle("About BridgeIt")
+        dlg.setFixedWidth(380)
+        dlg.setStyleSheet(
+            f"QDialog {{ background: {t['sidebar_bg']}; color: {t['text']}; }} "
+            f"QLabel {{ color: {t['text']}; }} "
+            f"QPushButton {{ padding: 6px 14px; border-radius: 6px; "
+            f"background: {t['surface']}; color: {t['text']}; border: 1px solid {t['border']}; }} "
+            f"QPushButton#donate {{ background: {t['accent']}; color: #fff; border: none; }}"
+        )
+
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(10)
+
+        name_lbl = QLabel(f"BridgeIt  <span style='color:{t['text_muted']}; font-weight:normal;'>v{APP_VERSION}</span>")
+        name_lbl.setStyleSheet("font-size: 18px; font-weight: 700;")
+        layout.addWidget(name_lbl)
+
+        desc = QLabel("Convert images to fabrication-ready SVGs with automatic bridge generation for laser cutting.")
+        desc.setWordWrap(True)
+        desc.setStyleSheet(f"font-size: 11px; color: {t['text_muted']};")
+        layout.addWidget(desc)
+
+        layout.addSpacing(4)
+
+        links_lbl = QLabel(
+            f"<a href='https://outlandfabworks.github.io/BridgeIt' style='color:{t['accent']};'>Website</a>"
+            f"  ·  "
+            f"<a href='https://github.com/outlandfabworks/BridgeIt' style='color:{t['accent']};'>GitHub</a>"
+            f"  ·  "
+            f"<a href='https://ko-fi.com/outlandfabworks' style='color:{t['accent']};'>Support / Donate</a>"
+        )
+        links_lbl.setOpenExternalLinks(True)
+        links_lbl.setStyleSheet("font-size: 11px;")
+        layout.addWidget(links_lbl)
+
+        layout.addSpacing(8)
+
+        btn_donate = QPushButton("Support BridgeIt on Ko-fi")
+        btn_donate.setObjectName("donate")
+        btn_donate.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_donate.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://ko-fi.com/outlandfabworks"))
+        )
+        layout.addWidget(btn_donate)
+
+        btn_close = QPushButton("Close")
+        btn_close.clicked.connect(dlg.accept)
+        layout.addWidget(btn_close)
+
+        dlg.exec()
 
     @property
     def _bridges(self):

@@ -161,6 +161,15 @@ _ICONS: dict[str, str] = {
                 stroke="COLOR" stroke-width="1.5"
                 stroke-linecap="round" stroke-linejoin="round"/>
     </svg>""",
+
+    # About — circle with "i" inside
+    "about": """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none">
+      <circle cx="10" cy="10" r="7.5" stroke="COLOR" stroke-width="1.5"/>
+      <line x1="10" y1="9" x2="10" y2="14"
+            stroke="COLOR" stroke-width="1.8" stroke-linecap="round"/>
+      <circle cx="10" cy="6.5" r="1" fill="COLOR"/>
+    </svg>""",
 }
 
 # ---------------------------------------------------------------------------
