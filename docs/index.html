@@ -3,8 +3,50 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>BridgeIt — Laser-Cutter SVG Converter</title>
-  <meta name="description" content="Convert any image into a fabrication-ready SVG for laser cutting. Automatic background removal, contour tracing, and bridge generation — free desktop app for Windows, macOS, and Linux."/>
+
+  <!-- Primary SEO -->
+  <title>BridgeIt — Free Laser Cutting SVG Converter with Auto Bridge Generation</title>
+  <meta name="description" content="BridgeIt converts any image into a fabrication-ready SVG for laser cutting. Automatic background removal, contour tracing, floating island detection, and bridge tab generation. Free for Windows, macOS, and Linux."/>
+  <meta name="keywords" content="laser cutting SVG, laser cutter bridge generator, floating island laser cutting, image to SVG laser cutter, laser cut bridge tab, remove background laser cutting, LightBurn SVG, laser cutting software free, SVG converter laser, laser cutting islands"/>
+  <link rel="canonical" href="https://outlandfabworks.github.io/BridgeIt/"/>
+
+  <!-- Open Graph (Facebook, Discord, etc.) -->
+  <meta property="og:type" content="website"/>
+  <meta property="og:url" content="https://outlandfabworks.github.io/BridgeIt/"/>
+  <meta property="og:title" content="BridgeIt — Free Laser Cutting SVG Converter"/>
+  <meta property="og:description" content="Convert any image into a fabrication-ready SVG. Automatic background removal, island detection, and bridge tab generation. Free desktop app for Windows, macOS, and Linux."/>
+  <meta property="og:image" content="https://raw.githubusercontent.com/outlandfabworks/BridgeIt/main/bridgeit/assets/icon_256.png"/>
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary"/>
+  <meta name="twitter:title" content="BridgeIt — Free Laser Cutting SVG Converter"/>
+  <meta name="twitter:description" content="Convert any image into a fabrication-ready SVG with automatic bridge generation. Free for Windows, macOS, and Linux."/>
+  <meta name="twitter:image" content="https://raw.githubusercontent.com/outlandfabworks/BridgeIt/main/bridgeit/assets/icon_256.png"/>
+
+  <!-- Structured data: SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "BridgeIt",
+    "operatingSystem": "Windows, macOS, Linux",
+    "applicationCategory": "DesignApplication",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "description": "BridgeIt converts images into fabrication-ready SVGs for laser cutting. Features automatic background removal, contour tracing, floating island detection, and bridge tab generation.",
+    "url": "https://outlandfabworks.github.io/BridgeIt/",
+    "downloadUrl": "https://github.com/outlandfabworks/BridgeIt/releases/latest",
+    "softwareVersion": "1.0.0",
+    "author": {
+      "@type": "Organization",
+      "name": "Outland Fab Works",
+      "url": "https://github.com/outlandfabworks"
+    }
+  }
+  </script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -164,6 +206,21 @@
     }
     .btn-kofi:hover { opacity: 0.88; }
 
+    /* ── FAQ ── */
+    .faq {
+      max-width: 700px;
+      margin: 0 auto 4rem;
+      padding: 0 1.5rem;
+    }
+    .faq h2 { font-size: 1.8rem; font-weight: 700; margin-bottom: 1.5rem; text-align: center; }
+    .faq-item {
+      border-top: 1px solid var(--border);
+      padding: 1.2rem 0;
+    }
+    .faq-item h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.4rem; }
+    .faq-item p { font-size: 0.875rem; color: var(--muted); line-height: 1.7; }
+    .faq-item strong { color: var(--text); }
+
     /* ── Footer ── */
     footer {
       text-align: center;
@@ -210,8 +267,8 @@
   <div class="hero-icon">
     <img src="https://raw.githubusercontent.com/outlandfabworks/BridgeIt/main/bridgeit/assets/icon.png" alt="BridgeIt icon"/>
   </div>
-  <h1>From photo to<br/><span>laser-ready SVG</span></h1>
-  <p>BridgeIt removes backgrounds, traces clean vector outlines, detects floating islands, and automatically adds bridge tabs — so your design stays in one piece after cutting.</p>
+  <h1>Image to <span>laser-ready SVG</span><br/>with auto bridge generation</h1>
+  <p>BridgeIt removes backgrounds, traces clean vector outlines, detects floating islands, and automatically adds bridge tabs — so your laser cut design stays in one piece.</p>
 
   <div class="download-row">
     <a class="btn-dl primary" href="https://github.com/outlandfabworks/BridgeIt/releases/latest/download/BridgeIt-windows.zip">
@@ -292,6 +349,40 @@
       <h3>Export and cut</h3>
       <p>Export the cut-path SVG straight into your laser cutter software. Done.</p>
     </div>
+  </div>
+</section>
+
+<section class="faq">
+  <h2>Common questions</h2>
+
+  <div class="faq-item">
+    <h3>What is a floating island in laser cutting?</h3>
+    <p>When you cut a shape that has a fully enclosed interior piece — like the counter of a letter O, or a logo with a hole in it — that interior piece is called a <strong>floating island</strong>. It has no connection to the surrounding material, so it falls away when cut. BridgeIt detects these automatically and adds thin <strong>bridge tabs</strong> that keep the island attached until you snap it free by hand.</p>
+  </div>
+
+  <div class="faq-item">
+    <h3>What is a bridge tab in laser cutting?</h3>
+    <p>A bridge tab (also called a micro-tab or bridge) is a small uncut section of material that connects a floating island to its surrounding piece. BridgeIt adds these automatically to your SVG cut paths so your design stays in one piece after cutting. You snap them off cleanly with a craft knife or your fingers.</p>
+  </div>
+
+  <div class="faq-item">
+    <h3>Does BridgeIt work with LightBurn?</h3>
+    <p>Yes. BridgeIt exports a standard SVG cut-path file that imports directly into LightBurn, RDWorks, LaserGRBL, and any other laser cutter software that accepts SVG files.</p>
+  </div>
+
+  <div class="faq-item">
+    <h3>Can I use my own image or logo?</h3>
+    <p>Yes — any PNG, JPG, or SVG. BridgeIt uses an AI model (U2Net) to remove the background automatically, then traces the outlines as smooth vector paths. Works well with logos, clipart, photographs, and hand-drawn designs.</p>
+  </div>
+
+  <div class="faq-item">
+    <h3>Is BridgeIt really free?</h3>
+    <p>Yes, completely free with no feature limits, no watermarks, and no account required. If it saves you time, you can support development with a small donation — but there's no obligation.</p>
+  </div>
+
+  <div class="faq-item">
+    <h3>Does it work on Mac and Windows?</h3>
+    <p>Yes — BridgeIt runs on Windows, macOS, and Linux. Download the right version for your system from the links above.</p>
   </div>
 </section>
 
