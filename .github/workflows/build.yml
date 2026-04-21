@@ -15,9 +15,6 @@ jobs:
           - os: ubuntu-22.04
             name: linux
             artifact: BridgeIt-linux.tar.gz
-          - os: macos-13          # x86_64 (Rosetta runs on M-series too)
-            name: macos
-            artifact: BridgeIt-macos.dmg
           - os: windows-latest
             name: windows
             artifact: BridgeIt-windows.zip
@@ -25,7 +22,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     name: Build (${{ matrix.name }})
     timeout-minutes: 90
-    continue-on-error: ${{ matrix.name == 'macos' }}
 
     steps:
       - uses: actions/checkout@v4
