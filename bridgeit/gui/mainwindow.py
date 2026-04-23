@@ -578,8 +578,9 @@ class MainWindow(QMainWindow):
                     border-color: {t['accent_hover']};
                 }}
                 QPushButton:disabled {{
-                    background: {t['surface']};
-                    border-color: {t['border_faint']};
+                    background: transparent;
+                    border-color: transparent;
+                    opacity: 0.35;
                 }}
                 """
             )
@@ -635,9 +636,9 @@ class MainWindow(QMainWindow):
                 border-color: {t['accent_hover']};
             }}
             QPushButton:disabled {{
-                background: {t['surface']};
-                border-color: {t['border_faint']};
-                color: {t['border']};
+                background: transparent;
+                border-color: transparent;
+                opacity: 0.35;
             }}
             """
         )
