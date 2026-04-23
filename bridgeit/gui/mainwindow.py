@@ -207,6 +207,33 @@ class _PipelineWorker(QObject):
 
 
 # ---------------------------------------------------------------------------
+# Update checker
+# ---------------------------------------------------------------------------
+
+class _UpdateChecker(QThread):
+    """Background thread that checks GitHub for a newer release.
+
+    Emits update_available(latest_version) if a newer tag is found.
+    Silently swallows all network/parse errors.
+    """
+    update_available = pyqtSignal(str)
+
+    def run(self) -> None:
+        try:
+            import urllib.request, json
+            from bridgeit.config import APP_VERSION
+            url = "https://api.github.com/repos/outlandfabworks/BridgeIt/releases/latest"
+            req = urllib.request.Request(url, headers={"User-Agent": "BridgeIt-UpdateChecker"})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read())
+            tag = data.get("tag_name", "").lstrip("v")
+            if tag and tuple(int(x) for x in tag.split(".")) > tuple(int(x) for x in APP_VERSION.split(".")):
+                self.update_available.emit(tag)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
 
@@ -363,6 +390,17 @@ class MainWindow(QMainWindow):
         # addWidget = left-aligned; addPermanentWidget = right-aligned (won't be pushed out)
         self._status_bar.addWidget(self._status_label)
         self._status_bar.addPermanentWidget(self._progress_bar)
+
+        # Update banner — hidden until checker finds a newer release
+        self._update_label = QLabel()
+        self._update_label.setOpenExternalLinks(True)
+        self._update_label.hide()
+        self._status_bar.addPermanentWidget(self._update_label)
+
+        # Start background update check
+        self._update_checker = _UpdateChecker()
+        self._update_checker.update_available.connect(self._on_update_available)
+        self._update_checker.start()
 
     def _build_header(self) -> QWidget:
         """Build a custom integrated header bar — taller and more structured than QToolBar.
@@ -813,6 +851,10 @@ class MainWindow(QMainWindow):
             )
         if hasattr(self, "_preview"):
             self._preview._drop_zone.update_theme()
+        if hasattr(self, "_update_label") and self._update_label.isVisible():
+            self._update_label.setStyleSheet(
+                f"color: {t['accent']}; padding: 0 8px; font-size: 11px;"
+            )
 
     # ------------------------------------------------------------------
     # Slots
@@ -1733,6 +1775,19 @@ class MainWindow(QMainWindow):
         t = current_theme()
         self._status_label.setStyleSheet(f"color: {t['text_muted']}; font-size: 11px; padding: 0;")
         self._status_label.setText("")
+
+    @pyqtSlot(str)
+    def _on_update_available(self, version: str) -> None:
+        t = current_theme()
+        url = "https://github.com/outlandfabworks/BridgeIt/releases/latest"
+        self._update_label.setText(
+            f"<a href='{url}' style='color:{t['accent']}; text-decoration:none;'>"
+            f"⬆ Update available: v{version}</a>"
+        )
+        self._update_label.setStyleSheet(
+            f"color: {t['accent']}; padding: 0 8px; font-size: 11px;"
+        )
+        self._update_label.show()
 
     def _maybe_show_donation_prompt(self) -> None:
         """Show a one-time donation prompt after every 3rd successful export.
