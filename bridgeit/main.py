@@ -62,6 +62,14 @@ def _run_gui() -> None:
     # which controls the taskbar icon and app name.
     app.setDesktopFileName("BridgeIt")   # links to BridgeIt.desktop on Linux
 
+    # Set the application-level icon so the taskbar/dock shows the BridgeIt
+    # logo instead of a generic Python icon.  Works for both the installed
+    # package (relative to this file) and the PyInstaller bundle.
+    from pathlib import Path
+    _icon_path = Path(__file__).parent / "assets" / "icon_256.png"
+    if _icon_path.exists():
+        app.setWindowIcon(QIcon(str(_icon_path)))
+
     # QPalette is Qt's colour theme system; setting it here ensures that
     # widgets drawn by the OS (like scroll bars) also use our dark theme,
     # not just the widgets we style manually via stylesheets.
