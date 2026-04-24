@@ -170,6 +170,16 @@ _ICONS: dict[str, str] = {
             stroke="COLOR" stroke-width="1.8" stroke-linecap="round"/>
       <circle cx="10" cy="6.5" r="1" fill="COLOR"/>
     </svg>""",
+
+    # Update — circular arrow (check for updates)
+    "update": """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none">
+      <path d="M15.5 10 A5.5 5.5 0 1 1 10 4.5" stroke="COLOR" stroke-width="1.5"
+            stroke-linecap="round"/>
+      <polyline points="10,2 10,5.5 13.5,5.5"
+                stroke="COLOR" stroke-width="1.5"
+                stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>""",
 }
 
 # ---------------------------------------------------------------------------

@@ -506,6 +506,10 @@ class MainWindow(QMainWindow):
         btn_about.clicked.connect(self._show_about)
         hlay.addWidget(btn_about)
 
+        btn_update = self._header_btn("update", "Check for Updates")
+        btn_update.clicked.connect(self._check_for_update)
+        hlay.addWidget(btn_update)
+
         return header
 
     def _header_sep(self) -> QWidget:
@@ -1873,6 +1877,87 @@ class MainWindow(QMainWindow):
         btn_close = QPushButton("Close")
         btn_close.clicked.connect(dlg.accept)
         layout.addWidget(btn_close)
+
+        dlg.exec()
+
+    def _check_for_update(self) -> None:
+        import json
+        import urllib.request
+        from PyQt6.QtCore import QUrl
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel
+
+        t = current_theme()
+        try:
+            req = urllib.request.Request(
+                "https://api.github.com/repos/outlandfabworks/BridgeIt/releases/latest",
+                headers={"Accept": "application/vnd.github+json", "User-Agent": f"BridgeIt/{APP_VERSION}"},
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read())
+            latest = data.get("tag_name", "").lstrip("v")
+            url = data.get("html_url", "https://github.com/outlandfabworks/BridgeIt/releases/latest")
+        except Exception as exc:
+            _LOG.warning("Update check failed: %s", exc)
+            QMessageBox.warning(self, "Update Check Failed",
+                                "Could not reach GitHub to check for updates.\n"
+                                "Check your internet connection and try again.")
+            return
+
+        def _ver_tuple(v: str):
+            try:
+                return tuple(int(x) for x in v.split("."))
+            except ValueError:
+                return (0,)
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Check for Updates")
+        dlg.setFixedWidth(360)
+        dlg.setStyleSheet(
+            f"QDialog {{ background: {t['sidebar_bg']}; color: {t['text']}; }} "
+            f"QLabel {{ color: {t['text']}; }} "
+            f"QPushButton {{ padding: 6px 14px; border-radius: 6px; "
+            f"background: {t['surface']}; color: {t['text']}; border: 1px solid {t['border']}; }} "
+            f"QPushButton#primary {{ background: {t['accent']}; color: #fff; border: none; }}"
+        )
+
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(10)
+
+        up_to_date = _ver_tuple(latest) <= _ver_tuple(APP_VERSION)
+
+        if up_to_date:
+            title = QLabel(f"BridgeIt is up to date")
+            title.setStyleSheet("font-size: 15px; font-weight: 700;")
+            layout.addWidget(title)
+            sub = QLabel(f"You are running the latest version (v{APP_VERSION}).")
+            sub.setWordWrap(True)
+            sub.setStyleSheet(f"font-size: 11px; color: {t['text_muted']};")
+            layout.addWidget(sub)
+        else:
+            title = QLabel(f"Update available: v{latest}")
+            title.setStyleSheet(f"font-size: 15px; font-weight: 700; color: {t['accent']};")
+            layout.addWidget(title)
+            sub = QLabel(f"You are running v{APP_VERSION}. Download the latest release from GitHub.")
+            sub.setWordWrap(True)
+            sub.setStyleSheet(f"font-size: 11px; color: {t['text_muted']};")
+            layout.addWidget(sub)
+
+        layout.addSpacing(8)
+        btn_row = QHBoxLayout()
+        layout.addLayout(btn_row)
+
+        if not up_to_date:
+            btn_dl = QPushButton("Download Update")
+            btn_dl.setObjectName("primary")
+            btn_dl.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn_dl.clicked.connect(lambda: (QDesktopServices.openUrl(QUrl(url)), dlg.accept()))
+            btn_row.addWidget(btn_dl)
+
+        btn_close = QPushButton("Close")
+        btn_close.clicked.connect(dlg.accept)
+        btn_row.addWidget(btn_close)
 
         dlg.exec()
 
