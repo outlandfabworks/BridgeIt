@@ -225,7 +225,7 @@ class _UpdateChecker(QThread):
             req = urllib.request.Request(url, headers={"User-Agent": "BridgeIt-UpdateChecker"})
             with urllib.request.urlopen(req, timeout=8) as resp:
                 data = json.loads(resp.read())
-            tag = data.get("tag_name", "").lstrip("v")
+            tag = data.get("tag_name", "").lstrip("vV")
             if tag and tuple(int(x) for x in tag.split(".")) > tuple(int(x) for x in APP_VERSION.split(".")):
                 self.update_available.emit(tag)
         except Exception:
