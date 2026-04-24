@@ -139,7 +139,7 @@ if sys.platform == 'darwin':
         info_plist={
             'NSHighResolutionCapable': True,
             'NSRequiresAquaSystemAppearance': False,
-            'CFBundleShortVersionString': '1.0.0',
+            'CFBundleShortVersionString': '1.0.1',
             'CFBundleName': 'BridgeIt',
             'CFBundleDisplayName': 'BridgeIt',
         },

@@ -66,6 +66,8 @@ jobs:
       - name: Package (Linux)
         if: matrix.name == 'linux'
         run: |
+          cp install.sh dist/BridgeIt/
+          chmod +x dist/BridgeIt/install.sh
           cd dist
           tar -czf ../${{ matrix.artifact }} BridgeIt/
 

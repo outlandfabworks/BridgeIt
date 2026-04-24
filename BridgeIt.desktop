@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.1
+Name=BridgeIt
+GenericName=Laser Cutting SVG Converter
+Comment=Convert images to fabrication-ready SVGs with automatic bridge generation
+Exec=bridgeit
+Icon=BridgeIt
+Categories=Graphics;VectorGraphics;2DGraphics;
+Keywords=laser;cutting;svg;vector;bridge;fabrication;
+StartupWMClass=BridgeIt
+MimeType=image/png;image/jpeg;image/webp;image/bmp;
