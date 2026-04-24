@@ -53,15 +53,15 @@ class Mode(Enum):
 # ── Visual constants ──────────────────────────────────────────────────────
 # These QColor objects define what colour each type of item appears on screen.
 # Having them as module-level constants means we change the colour in one place.
-_COL_NORMAL      = QColor("#ffffff")   # white  — unselected path
-_COL_PATH_SEL    = QColor("#f59e0b")   # amber  — selected path
-_COL_HOVER       = QColor("#a78bfa")   # purple — hovered path/bridge
-_COL_BRIDGE      = QColor("#22c55e")   # green  — auto bridge marker
-_COL_BRIDGE_SEL  = QColor("#ef4444")   # red    — selected bridge
-_COL_STAGED_SEL  = QColor("#f59e0b")   # amber  — selected staged bridge
-_COL_PENDING     = QColor("#fbbf24")   # yellow — first bridge click dot
-_COL_SNAP        = QColor("#ffffff")   # white  — snap dot: waiting for pt1
-_COL_SNAP_PT2    = QColor("#fb923c")   # orange — snap dot: waiting for pt2 (complete bridge)
+_COL_NORMAL      = QColor("#2d2d2d")   # dark charcoal — unselected path (visible on light material bg)
+_COL_PATH_SEL    = QColor("#d97706")   # amber  — selected path
+_COL_HOVER       = QColor("#7c3aed")   # violet — hovered path/bridge
+_COL_BRIDGE      = QColor("#16a34a")   # green  — auto bridge marker
+_COL_BRIDGE_SEL  = QColor("#dc2626")   # red    — selected bridge
+_COL_STAGED_SEL  = QColor("#d97706")   # amber  — selected staged bridge
+_COL_PENDING     = QColor("#b45309")   # dark amber — first bridge click dot
+_COL_SNAP        = QColor("#4a4a4a")   # dark gray — snap dot: waiting for pt1
+_COL_SNAP_PT2    = QColor("#E95420")   # accent orange — snap dot: waiting for pt2 (complete bridge)
 def _canvas_bg() -> QColor:
     """Return the canvas background colour from the active theme (called lazily)."""
     return QColor(current_theme()["canvas_bg"])
@@ -171,7 +171,7 @@ class _PathItem(QGraphicsPathItem):
         self._sel = False         # selection state
         self.setAcceptHoverEvents(True)   # needed for hover highlight to work
         # Nearly-transparent fill so the path has a clickable interior area
-        self.setBrush(QBrush(QColor(255, 255, 255, 1)))
+        self.setBrush(QBrush(QColor(0, 0, 0, 1)))
         self._refresh_pen()
 
     def _refresh_pen(self) -> None:
@@ -310,7 +310,7 @@ class _ConfirmedBridgeItem(QGraphicsPathItem):
         super().__init__(qpath)
         self.setAcceptHoverEvents(True)
         # Nearly-transparent fill so the rectangle has a clickable interior
-        self.setBrush(QBrush(QColor(255, 255, 255, 1)))
+        self.setBrush(QBrush(QColor(0, 0, 0, 1)))
         self._refresh_pen()
 
     def _refresh_pen(self) -> None:

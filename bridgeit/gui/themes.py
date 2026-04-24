@@ -45,8 +45,9 @@ THEMES: dict[str, dict[str, str]] = {
         "success":     "#4e9a06",
         "error":       "#cc0000",
 
-        # Canvas / preview area
-        "canvas_bg":   "#1a0613",
+        # Canvas / preview area — kept light in all themes so the subject
+        # is visible against the material preview background
+        "canvas_bg":   "#d8d4d0",
 
         # Splitter handle
         "splitter":    "#3d1a30",
@@ -109,7 +110,7 @@ THEMES: dict[str, dict[str, str]] = {
         "success":     "#33d17a",
         "error":       "#e01b24",
 
-        "canvas_bg":   "#000000",
+        "canvas_bg":   "#d8d8d8",
 
         "splitter":    "#1c1c1c",
 
