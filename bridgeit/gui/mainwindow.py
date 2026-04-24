@@ -252,6 +252,7 @@ class MainWindow(QMainWindow):
         # Settings waiting to be applied after the current pipeline run finishes
         self._pending_settings: Optional[PipelineSettings] = None
         self._preview_svg: Optional[str] = None
+        self._update_version: Optional[str] = None
 
         # ── Canvas edit state (synced to/from the canvas widget) ──────────
         self._excluded_paths: set = set()        # path indices hidden by the user
@@ -390,13 +391,7 @@ class MainWindow(QMainWindow):
         self._status_bar.addWidget(self._status_label)
         self._status_bar.addPermanentWidget(self._progress_bar)
 
-        # Update banner — hidden until checker finds a newer release
-        self._update_label = QLabel()
-        self._update_label.setOpenExternalLinks(True)
-        self._update_label.hide()
-        self._status_bar.addPermanentWidget(self._update_label)
-
-        # Start background update check
+        # Start background update check — button is added in _build_header
         self._update_checker = _UpdateChecker()
         self._update_checker.update_available.connect(self._on_update_available)
         self._update_checker.start()
@@ -530,6 +525,14 @@ class MainWindow(QMainWindow):
 
         # ── RIGHT: meta controls ──────────────────────────────────────────
         hlay.addStretch()
+
+        # Update button — hidden until _on_update_available fires
+        self._btn_update = QPushButton("⬆ Update available")
+        self._btn_update.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_update.hide()
+        self._btn_update.clicked.connect(self._on_update_clicked)
+        hlay.addWidget(self._btn_update)
+        hlay.addSpacing(4)
 
         self._btn_theme = self._header_btn("theme", f"Theme: {theme_label()}  (click to cycle)")
         self._btn_theme.clicked.connect(self._on_theme_toggle)
@@ -849,10 +852,8 @@ class MainWindow(QMainWindow):
             )
         if hasattr(self, "_preview"):
             self._preview._drop_zone.update_theme()
-        if hasattr(self, "_update_label") and self._update_label.isVisible():
-            self._update_label.setStyleSheet(
-                f"color: {t['accent']}; padding: 0 8px; font-size: 11px;"
-            )
+        if hasattr(self, "_btn_update") and self._btn_update.isVisible():
+            self._style_update_btn()
 
     # ------------------------------------------------------------------
     # Slots
@@ -1777,16 +1778,35 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(str)
     def _on_update_available(self, version: str) -> None:
+        self._update_version = version
+        self._btn_update.setText(f"⬆  v{version} available")
+        self._btn_update.setToolTip(f"Version {version} is available — click to open the releases page")
+        self._style_update_btn()
+        self._btn_update.show()
+
+    def _style_update_btn(self) -> None:
         t = current_theme()
-        url = "https://github.com/outlandfabworks/BridgeIt/releases/latest"
-        self._update_label.setText(
-            f"<a href='{url}' style='color:{t['accent']}; text-decoration:none;'>"
-            f"⬆ Update available: v{version}</a>"
-        )
-        self._update_label.setStyleSheet(
-            f"color: {t['accent']}; padding: 0 8px; font-size: 11px;"
-        )
-        self._update_label.show()
+        self._btn_update.setStyleSheet(f"""
+            QPushButton {{
+                background: {t['accent']};
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+                padding: 0 12px;
+                font-size: 11px;
+                font-weight: 600;
+                height: 28px;
+            }}
+            QPushButton:hover {{
+                background: {t['accent_hover']};
+            }}
+        """)
+
+    @pyqtSlot()
+    def _on_update_clicked(self) -> None:
+        from PyQt6.QtCore import QUrl
+        from PyQt6.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl("https://github.com/outlandfabworks/BridgeIt/releases/latest"))
 
     def _maybe_show_donation_prompt(self) -> None:
         """Show a one-time donation prompt after every 3rd successful export.
