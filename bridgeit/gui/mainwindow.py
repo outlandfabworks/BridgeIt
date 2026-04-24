@@ -290,6 +290,8 @@ class MainWindow(QMainWindow):
         # Tracks every icon button so _apply_theme() can re-render their icons
         # when the user cycles themes.  Each entry is (button, icon_name, is_primary).
         self._icon_btns: list[tuple] = []
+        # Tracks header separator widgets so their color updates with the theme.
+        self._sep_refs: list = []
 
         self._build_ui()
         self._apply_theme()
@@ -431,9 +433,9 @@ class MainWindow(QMainWindow):
         )
         hlay.addWidget(self._name_lbl)
 
-        ver_lbl = QLabel(f"  v{APP_VERSION}")
-        ver_lbl.setStyleSheet(f"color: {t['text_muted']}; font-size: 10px; padding-top: 3px;")
-        hlay.addWidget(ver_lbl)
+        self._ver_lbl = QLabel(f"  v{APP_VERSION}")
+        self._ver_lbl.setStyleSheet(f"color: {t['text_muted']}; font-size: 10px; padding-top: 3px;")
+        hlay.addWidget(self._ver_lbl)
 
         hlay.addSpacing(20)
         hlay.addWidget(self._header_sep())
@@ -554,6 +556,7 @@ class MainWindow(QMainWindow):
         sep = QWidget()
         sep.setFixedSize(1, 28)
         sep.setStyleSheet(f"background: {t['border_faint']};")
+        self._sep_refs.append(sep)
         return sep
 
     @staticmethod
@@ -834,11 +837,53 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_preview"):
             self._preview.setStyleSheet(f"background: {t['canvas_bg']};")
             self._preview.canvas.update_theme()
-        # Re-render all icon buttons with the new theme colour (including disabled state)
+        # Re-render all icon buttons with the new theme colour and re-apply their
+        # inline stylesheets so hover highlight and borders match the new theme.
         if hasattr(self, "_icon_btns"):
             for btn, icon_name, is_primary in self._icon_btns:
                 icon_color = "#ffffff" if is_primary else t["text"]
                 btn.setIcon(self._make_btn_icon(icon_name, icon_color, t))
+                if is_primary:
+                    btn.setStyleSheet(
+                        f"QPushButton {{"
+                        f"  background: {t['accent']};"
+                        f"  border: 1px solid {t['accent']};"
+                        f"  border-radius: 8px; padding: 0;}}"
+                        f"QPushButton:hover {{"
+                        f"  background: {t['accent_hover']};"
+                        f"  border-color: {t['accent_hover']};}}"
+                        f"QPushButton:disabled {{"
+                        f"  background: transparent;"
+                        f"  border-color: transparent; opacity: 0.35;}}"
+                    )
+                else:
+                    btn.setStyleSheet(
+                        f"QPushButton {{"
+                        f"  background: transparent;"
+                        f"  border: 1px solid transparent;"
+                        f"  border-radius: 8px; padding: 0;}}"
+                        f"QPushButton:hover {{"
+                        f"  background: {t['surface_2']};"
+                        f"  border-color: {t['border']};}}"
+                        f"QPushButton:pressed {{"
+                        f"  background: {t['surface']};}}"
+                        f"QPushButton:checked {{"
+                        f"  background: {t['accent_dim']};"
+                        f"  border-color: {t['accent']};}}"
+                        f"QPushButton:checked:hover {{"
+                        f"  background: {t['surface_2']};"
+                        f"  border-color: {t['accent_hover']};}}"
+                        f"QPushButton:disabled {{ opacity: 0.35;}}"
+                    )
+        # Update separator line colours
+        if hasattr(self, "_sep_refs"):
+            for sep in self._sep_refs:
+                sep.setStyleSheet(f"background: {t['border_faint']};")
+        # Update version label
+        if hasattr(self, "_ver_lbl"):
+            self._ver_lbl.setStyleSheet(
+                f"color: {t['text_muted']}; font-size: 10px; padding-top: 3px;"
+            )
         # Update theme toggle button tooltip to show next theme name
         if hasattr(self, "_btn_theme"):
             self._btn_theme.setToolTip(f"Theme: {theme_label()}  (click to cycle)")
