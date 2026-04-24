@@ -117,7 +117,7 @@ class DropZone(QWidget):
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()
             # Only accept PNG and JPEG files — reject everything else
-            if urls and Path(urls[0].toLocalFile()).suffix.lower() in {".png", ".jpg", ".jpeg"}:
+            if urls and Path(urls[0].toLocalFile()).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}:
                 event.acceptProposedAction()   # signal "yes, I'll accept this drop"
                 return
         event.ignore()   # reject anything else

@@ -188,4 +188,6 @@ def main() -> None:
 # This guard ensures main() only runs when executing this file directly,
 # not when it's imported as a module by another script.
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
     main()

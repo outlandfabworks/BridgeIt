@@ -21,17 +21,33 @@ BridgeIt takes a photo or graphic, removes the background, traces the outlines a
 
 ## Installation
 
-### Requirements
+### Linux (recommended)
 
-- Python 3.10 or newer
-- A system with a display (Qt6 GUI application)
+Both the pre-built binary and the source install use the same one-command installer, which handles the app, taskbar icon, and `.desktop` launcher entry automatically.
 
-### From source
+**From a release download** — extract the `.tar.gz`, then:
+```bash
+cd BridgeIt-linux
+./install.sh
+```
+
+**From source**:
+```bash
+git clone https://github.com/outlandfabworks/BridgeIt.git
+cd BridgeIt
+./install.sh
+```
+
+To uninstall: `./install.sh --uninstall`
+
+### Manual / other platforms
+
+Requirements: Python 3.10 or newer with a display (Qt6 GUI application).
 
 ```bash
-git clone https://github.com/outlandfabworks/bridgeit.git
-cd bridgeit
-pip install -e .
+git clone https://github.com/outlandfabworks/BridgeIt.git
+cd BridgeIt
+pip install .
 ```
 
 ### First launch

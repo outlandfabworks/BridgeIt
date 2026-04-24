@@ -500,6 +500,7 @@ class InteractiveCanvas(QGraphicsView):
         # Each entry is a snapshot: (excluded, manual_bridges)
         self._undo_stack: List[Tuple] = []
         self._redo_stack: List[Tuple] = []
+        self._UNDO_LIMIT = 50
 
         # ── Active first-point placement ──────────────────────────────────
         # When the user clicks in bridge mode, _bridge_pt1 holds the first endpoint
@@ -520,6 +521,10 @@ class InteractiveCanvas(QGraphicsView):
         # ── Rubber-band selection ─────────────────────────────────────────
         self._rubber_band: Optional[QRubberBand] = None   # the selection rectangle widget
         self._rubber_origin: Optional[QRect] = None       # where the drag started
+
+        # Tracks the pt1-placed state of the snap dot so we can change its colour
+        # without monkey-patching the Qt item itself.
+        self._snap_dot_has_pt1: bool = False
 
         # Flag: has the scene been fitted to the view yet?
         # We fit once on first load, then let the user zoom freely.
@@ -576,6 +581,8 @@ class InteractiveCanvas(QGraphicsView):
     def _push_undo(self) -> None:
         """Save current state before a destructive operation; clear redo stack."""
         self._undo_stack.append(self._snapshot())
+        if len(self._undo_stack) > self._UNDO_LIMIT:
+            self._undo_stack.pop(0)
         self._redo_stack.clear()
 
     def update_theme(self) -> None:
@@ -1062,18 +1069,19 @@ class InteractiveCanvas(QGraphicsView):
                 QPen(col, 1.5),
                 QBrush(fill),
             )
+            self._snap_dot_has_pt1 = has_pt1
         else:
             # Recreate if the pt1-state changed so the colour updates immediately
-            if getattr(self._snap_dot, "_has_pt1", None) != has_pt1:
+            if self._snap_dot_has_pt1 != has_pt1:
                 self._scene.removeItem(self._snap_dot)
                 self._snap_dot = self._scene.addEllipse(
                     pt[0] - r, pt[1] - r, r * 2, r * 2,
                     QPen(col, 1.5),
                     QBrush(fill),
                 )
+                self._snap_dot_has_pt1 = has_pt1
             else:
                 self._snap_dot.setRect(pt[0] - r, pt[1] - r, r * 2, r * 2)
-        self._snap_dot._has_pt1 = has_pt1
 
     def _hide_snap_dot(self) -> None:
         if self._snap_dot is not None:

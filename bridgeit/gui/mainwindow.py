@@ -54,7 +54,6 @@ from bridgeit.gui.controls import ControlsPanel
 from bridgeit.gui.preview import PreviewPanel
 from bridgeit.pipeline.pipeline import PipelineResult, PipelineRunner, PipelineSettings, Stage
 from bridgeit.gui.canvas import InteractiveCanvas, Mode as CanvasMode
-from bridgeit.pipeline.export import make_preview_svg
 
 
 # Maps each pipeline Stage to a human-readable position number (EXPORT omitted
@@ -79,7 +78,7 @@ def _apply_dialog_theme(dlg: "QMessageBox") -> None:
     t = current_theme()
     dlg.setStyleSheet(f"""
         QMessageBox {{
-            background-color: {t['card_bg']};
+            background-color: {t['surface']};
             color: {t['text']};
         }}
         QMessageBox QLabel {{
@@ -591,7 +590,6 @@ class MainWindow(QMainWindow):
         A reference is stored in self._icon_btns so _apply_theme() can
         re-render the icon whenever the user cycles themes.
         """
-        from bridgeit.gui.icons import make_icon
         t = current_theme()
         icon_color = "#ffffff" if primary else t["text"]
 
@@ -885,8 +883,9 @@ class MainWindow(QMainWindow):
         Shows the raw (un-processed) image immediately so the user has something
         to look at while the pipeline runs in the background.
         """
-        # Reset canvas-dependent buttons so stale results from a previous image
-        # can't be acted on while the new pipeline run is in progress.
+        # Reset canvas-dependent buttons and info panel so stale results from a
+        # previous image can't be acted on while the new pipeline run is in progress.
+        self._controls.reset_info()
         self._btn_export.setEnabled(False)
         self._btn_export_image.setEnabled(False)
         self._btn_view_svg.setEnabled(False)
@@ -1815,7 +1814,7 @@ class MainWindow(QMainWindow):
         dlg.setWindowTitle("Enjoying BridgeIt?")
         dlg.setFixedWidth(400)
         dlg.setStyleSheet(
-            f"QDialog {{ background: {t['card_bg'] if 'card_bg' in t else t['sidebar_bg']}; "
+            f"QDialog {{ background: {t['surface']}; "
             f"color: {t['text']}; }} "
             f"QLabel {{ color: {t['text']}; }} "
             f"QPushButton {{ padding: 6px 14px; border-radius: 6px; "

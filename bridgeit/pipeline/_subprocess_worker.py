@@ -22,7 +22,7 @@ def run_pipeline(queue, source, settings):
         runner = PipelineRunner(settings=settings)
         result = runner.run(source)
         queue.put(("ok", result))
-    except BaseException:
+    except Exception:
         import traceback
         queue.put(("err", traceback.format_exc()))
 
@@ -43,6 +43,6 @@ def run_preview(queue, nobg_image, settings):
         runner = PipelineRunner(settings=settings)
         result = runner.run_to_preview(nobg_image)
         queue.put(("ok", result))
-    except BaseException:
+    except Exception:
         import traceback
         queue.put(("err", traceback.format_exc()))
