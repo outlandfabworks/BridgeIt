@@ -236,9 +236,15 @@ class ImagePreview(QLabel):
         x = (w - dw) / 2 + self._offset.x()
         y = (h - dh) / 2 + self._offset.y()
 
-        # Draw a light mat behind the image so transparent areas are visible
-        # regardless of the canvas background colour (dark/blackout themes).
-        painter.fillRect(QRectF(x, y, dw, dh), QColor("#d8d4d0"))
+        # Draw a checkerboard behind the image to indicate transparency,
+        # matching the convention used in Photoshop/GIMP/etc.
+        tile = QPixmap(24, 24)
+        tile.fill(QColor("#e8e5e2"))
+        tp = QPainter(tile)
+        tp.fillRect(0, 0, 12, 12, QColor("#c8c4c0"))
+        tp.fillRect(12, 12, 12, 12, QColor("#c8c4c0"))
+        tp.end()
+        painter.fillRect(QRectF(x, y, dw, dh), QBrush(tile))
 
         painter.drawPixmap(int(x), int(y), int(dw), int(dh), self._pixmap)
 
