@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import List, Optional
 
 # Qt core types: signals/slots, geometry, and alignment flags
-from PyQt6.QtCore import QMimeData, QPointF, QSizeF, Qt, pyqtSignal
+from PyQt6.QtCore import QMimeData, QPointF, QRectF, QSizeF, Qt, pyqtSignal
 
 # Qt graphics/painting types
 from PyQt6.QtGui import (
@@ -235,6 +235,10 @@ class ImagePreview(QLabel):
         # Centre the image in the widget, then offset by the pan amount
         x = (w - dw) / 2 + self._offset.x()
         y = (h - dh) / 2 + self._offset.y()
+
+        # Draw a light mat behind the image so transparent areas are visible
+        # regardless of the canvas background colour (dark/blackout themes).
+        painter.fillRect(QRectF(x, y, dw, dh), QColor("#d8d4d0"))
 
         painter.drawPixmap(int(x), int(y), int(dw), int(dh), self._pixmap)
 
