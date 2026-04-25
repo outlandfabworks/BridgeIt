@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # BridgeIt installer for Linux
-# Works from the source repo (pip install) or from an extracted binary release.
+# Works from the source repo or from an extracted binary release.
 # Usage:  ./install.sh           — install
 #         ./install.sh --uninstall — remove
 
@@ -42,12 +42,6 @@ if [[ "${1:-}" == "--uninstall" ]]; then
         gtk-update-icon-cache -f -t "$ICON_BASE" 2>/dev/null || true
     command -v update-desktop-database &>/dev/null && \
         update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
-    # If installed via pip, offer to remove that too
-    if command -v pip &>/dev/null && pip show bridgeit &>/dev/null 2>&1; then
-        info "Removing pip package…"
-        pip uninstall -y bridgeit
-        success "pip package removed"
-    fi
     echo -e "\n${GREEN}BridgeIt has been uninstalled.${RESET}"
     exit 0
 fi
@@ -62,7 +56,6 @@ else
 fi
 
 # ── Find assets ───────────────────────────────────────────────────────────────
-# PyInstaller 6+ puts data files under _internal/; earlier versions put them directly
 if [ "$MODE" = "binary" ]; then
     if   [ -d "$SCRIPT_DIR/_internal/bridgeit/assets" ]; then
         ASSET_DIR="$SCRIPT_DIR/_internal/bridgeit/assets"
@@ -83,17 +76,49 @@ header "Installing BridgeIt  (mode: $MODE)"
 header "Step 1/4  —  Installing application"
 
 if [ "$MODE" = "source" ]; then
-    # Prefer pip3, fall back to pip
-    PIP=""
-    for cmd in pip3 pip; do
-        if command -v "$cmd" &>/dev/null; then PIP="$cmd"; break; fi
+    # Find Python 3
+    PYTHON=""
+    for cmd in python3 python; do
+        if command -v "$cmd" &>/dev/null && "$cmd" -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" 2>/dev/null; then
+            PYTHON="$cmd"; break
+        fi
     done
-    [ -n "$PIP" ] || die "pip not found. Install Python 3 and pip first:\n  sudo apt install python3-pip"
+    [ -n "$PYTHON" ] || die "Python 3.10+ not found. Install it:\n  sudo apt install python3"
 
-    info "Running: $PIP install --user \"$SCRIPT_DIR\""
-    "$PIP" install --user "$SCRIPT_DIR"
-    EXEC_CMD="bridgeit"
-    success "Package installed via pip"
+    # Install into an isolated venv so we never touch the system Python.
+    # This works on all distros, including Ubuntu 23.04+ where pip install
+    # --user is blocked by PEP 668.
+    VENV_DIR="$APP_DIR/venv"
+    info "Creating isolated environment at $VENV_DIR…"
+    rm -rf "$APP_DIR"
+    mkdir -p "$APP_DIR"
+
+    "$PYTHON" -m venv "$VENV_DIR" 2>/dev/null || {
+        # On some Ubuntu setups python3-venv is a separate package
+        warn "venv creation failed — trying to install python3-venv…"
+        if command -v apt-get &>/dev/null; then
+            sudo apt-get install -y python3-venv || \
+                die "Could not install python3-venv. Try manually:\n  sudo apt install python3-venv"
+            "$PYTHON" -m venv "$VENV_DIR" || die "venv creation still failed."
+        else
+            die "Could not create venv. Install python3-venv for your distro and re-run."
+        fi
+    }
+
+    info "Installing BridgeIt and dependencies (this may take a few minutes)…"
+    "$VENV_DIR/bin/pip" install --quiet --upgrade pip
+    "$VENV_DIR/bin/pip" install --quiet "$SCRIPT_DIR" || \
+        die "Installation failed. Check the output above for details."
+
+    # Thin wrapper in ~/.local/bin so 'bridgeit' works from a terminal
+    mkdir -p "$BIN_DIR"
+    cat > "$BIN_DIR/bridgeit" <<WRAPPER
+#!/usr/bin/env bash
+exec "$VENV_DIR/bin/bridgeit" "\$@"
+WRAPPER
+    chmod +x "$BIN_DIR/bridgeit"
+    EXEC_CMD="$BIN_DIR/bridgeit"
+    success "Installed into isolated environment"
 
 else
     # Binary mode: copy the whole release folder to ~/.local/share/BridgeIt/
@@ -102,7 +127,6 @@ else
     cp -r "$SCRIPT_DIR" "$APP_DIR"
     chmod +x "$APP_DIR/BridgeIt"
 
-    # Create a thin wrapper in ~/.local/bin so `bridgeit` works from a terminal
     mkdir -p "$BIN_DIR"
     cat > "$BIN_DIR/bridgeit" <<WRAPPER
 #!/usr/bin/env bash
