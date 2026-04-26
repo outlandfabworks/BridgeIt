@@ -133,9 +133,8 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
           generate_release_notes: true
+          make_latest: true
           files: |
             BridgeIt-linux.tar.gz
-            BridgeIt-macos.dmg
             BridgeIt-windows.zip
