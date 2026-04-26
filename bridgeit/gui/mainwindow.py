@@ -317,7 +317,11 @@ class MainWindow(QMainWindow):
         self.resize(1280, 780)
 
         # Set window icon from bundled assets
-        _icon_path = Path(__file__).parent.parent / "assets" / "icon.png"
+        import sys as _sys
+        if getattr(_sys, 'frozen', False):
+            _icon_path = Path(_sys._MEIPASS) / "bridgeit" / "assets" / "icon.png"
+        else:
+            _icon_path = Path(__file__).parent.parent / "assets" / "icon.png"
         if _icon_path.exists():
             self.setWindowIcon(QIcon(str(_icon_path)))
 

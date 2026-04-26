@@ -38,7 +38,67 @@ def _init_theme_from_system(app) -> None:
         pass   # any failure is non-fatal; theme stays at "dark"
 
 
+def _ensure_linux_integration() -> None:
+    """On first run from a PyInstaller binary, silently install the .desktop
+    file and icons so the taskbar shows the BridgeIt icon without the user
+    needing to run install.sh manually."""
+    import sys, os, shutil, subprocess
+    if not getattr(sys, 'frozen', False):
+        return
+    desktop_dir = os.path.expanduser("~/.local/share/applications")
+    desktop_file = os.path.join(desktop_dir, "BridgeIt.desktop")
+    if os.path.exists(desktop_file):
+        return
+
+    exe = sys.executable
+    asset_dir = os.path.join(sys._MEIPASS, "bridgeit", "assets")
+    if not os.path.isdir(asset_dir):
+        return
+
+    try:
+        # Install icons
+        icon_base = os.path.expanduser("~/.local/share/icons/hicolor")
+        for sz in [16, 32, 48, 64, 128, 256, 512]:
+            src = os.path.join(asset_dir, f"icon_{sz}.png")
+            if os.path.exists(src):
+                dst_dir = os.path.join(icon_base, f"{sz}x{sz}", "apps")
+                os.makedirs(dst_dir, exist_ok=True)
+                shutil.copy2(src, os.path.join(dst_dir, "BridgeIt.png"))
+
+        # Install .desktop file
+        os.makedirs(desktop_dir, exist_ok=True)
+        with open(desktop_file, "w") as f:
+            f.write(f"""[Desktop Entry]
+Type=Application
+Version=1.1
+Name=BridgeIt
+GenericName=Laser Cutting SVG Converter
+Comment=Convert images to fabrication-ready SVGs with automatic bridge generation
+Exec={exe}
+Icon=BridgeIt
+Categories=Graphics;VectorGraphics;2DGraphics;
+Keywords=laser;cutting;svg;vector;bridge;fabrication;
+StartupWMClass=BridgeIt
+MimeType=image/png;image/jpeg;image/webp;image/bmp;
+""")
+
+        # Refresh caches silently
+        subprocess.run(
+            ["gtk-update-icon-cache", "-f", "-t", icon_base],
+            capture_output=True
+        )
+        subprocess.run(
+            ["update-desktop-database", desktop_dir],
+            capture_output=True
+        )
+    except Exception:
+        pass  # non-fatal — app still works, icon just might not show
+
+
 def _run_gui() -> None:
+    # Auto-install desktop entry and icons on first run from a binary
+    _ensure_linux_integration()
+
     # Import PyQt6 GUI components — these are only needed in GUI mode,
     # so we import inside the function to keep CLI mode lean.
     from PyQt6.QtGui import QIcon, QPalette, QColor
@@ -62,11 +122,13 @@ def _run_gui() -> None:
     # which controls the taskbar icon and app name.
     app.setDesktopFileName("BridgeIt")   # links to BridgeIt.desktop on Linux
 
-    # Set the application-level icon so the taskbar/dock shows the BridgeIt
-    # logo instead of a generic Python icon.  Works for both the installed
-    # package (relative to this file) and the PyInstaller bundle.
+    # Resolve icon path — use sys._MEIPASS when running as a PyInstaller
+    # binary (more reliable than __file__-relative paths in frozen builds).
     from pathlib import Path
-    _icon_path = Path(__file__).parent / "assets" / "icon_256.png"
+    if getattr(sys, 'frozen', False):
+        _icon_path = Path(sys._MEIPASS) / "bridgeit" / "assets" / "icon_256.png"
+    else:
+        _icon_path = Path(__file__).parent / "assets" / "icon_256.png"
     if _icon_path.exists():
         app.setWindowIcon(QIcon(str(_icon_path)))
 
