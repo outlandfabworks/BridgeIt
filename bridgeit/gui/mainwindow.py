@@ -1849,9 +1849,8 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot()
     def _on_update_clicked(self) -> None:
-        from PyQt6.QtCore import QUrl
-        from PyQt6.QtGui import QDesktopServices
-        QDesktopServices.openUrl(QUrl("https://github.com/outlandfabworks/BridgeIt/releases/latest"))
+        import webbrowser
+        webbrowser.open("https://github.com/outlandfabworks/BridgeIt/releases/latest")
 
     def _maybe_show_donation_prompt(self) -> None:
         """Show a one-time donation prompt after every 3rd successful export.
@@ -1922,7 +1921,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(btn_row)
 
         def _on_donate():
-            QDesktopServices.openUrl(QUrl("https://ko-fi.com/outlandfabworks"))
+            import webbrowser; webbrowser.open("https://ko-fi.com/outlandfabworks")
             dlg.accept()
 
         def _on_dismiss():
