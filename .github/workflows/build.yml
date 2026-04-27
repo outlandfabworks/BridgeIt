@@ -18,6 +18,9 @@ jobs:
           - os: windows-latest
             name: windows
             artifact: BridgeIt-windows.zip
+          - os: macos-13
+            name: macos
+            artifact: BridgeIt-macos.dmg
 
     runs-on: ${{ matrix.os }}
     name: Build (${{ matrix.name }})
@@ -71,23 +74,15 @@ jobs:
           cd dist
           tar -czf ../${{ matrix.artifact }} BridgeIt/
 
-      # ── macOS: create .dmg ───────────────────────────────────────────────
+      # ── macOS: ad-hoc sign + create .dmg ─────────────────────────────────
       - name: Package (macOS)
         if: matrix.name == 'macos'
         run: |
           pip install dmgbuild
-          cat > /tmp/dmg_settings.py << 'EOF'
-          import os
-          application = defines.get('app', 'dist/BridgeIt.app')
-          appname = os.path.basename(application)
-          files = [application]
-          symlinks = {'Applications': '/Applications'}
-          icon_locations = {appname: (140, 120), 'Applications': (360, 120)}
-          background = 'builtin-arrow'
-          window_rect = ((100, 100), (500, 300))
-          icon_size = 80
-          EOF
-          dmgbuild -s /tmp/dmg_settings.py -D app=dist/BridgeIt.app "BridgeIt" ${{ matrix.artifact }}
+          # Ad-hoc sign so macOS doesn't show "app is damaged" — users still
+          # see "unidentified developer" on first open (right-click → Open)
+          codesign --force --deep --sign - dist/BridgeIt.app
+          dmgbuild -s dmg_settings.py -D app=dist/BridgeIt.app "BridgeIt" ${{ matrix.artifact }}
 
       # ── Windows: package as zip ──────────────────────────────────────────
       - name: Package (Windows)
@@ -137,4 +132,5 @@ jobs:
           make_latest: true
           files: |
             BridgeIt-linux.tar.gz
+            BridgeIt-macos.dmg
             BridgeIt-windows.zip

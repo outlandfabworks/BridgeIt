@@ -39,11 +39,13 @@ def _init_theme_from_system(app) -> None:
 
 
 def _ensure_linux_integration() -> None:
-    """On first run from a PyInstaller binary, silently install the .desktop
-    file and icons so the taskbar shows the BridgeIt icon without the user
-    needing to run install.sh manually."""
+    """On first run from a PyInstaller binary on Linux, silently install the
+    .desktop file and icons so the taskbar shows the BridgeIt icon without
+    the user needing to run install.sh manually."""
     import sys, os, shutil, subprocess
     if not getattr(sys, 'frozen', False):
+        return
+    if sys.platform != 'linux':
         return
     desktop_dir = os.path.expanduser("~/.local/share/applications")
     desktop_file = os.path.join(desktop_dir, "BridgeIt.desktop")

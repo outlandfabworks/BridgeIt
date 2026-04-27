@@ -14,6 +14,8 @@
 
 import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(SPECPATH)))
+from bridgeit.config import APP_VERSION
 from PyInstaller.utils.hooks import collect_all, collect_data_files
 
 HERE = Path(SPECPATH)
@@ -139,7 +141,7 @@ if sys.platform == 'darwin':
         info_plist={
             'NSHighResolutionCapable': True,
             'NSRequiresAquaSystemAppearance': False,
-            'CFBundleShortVersionString': '1.0.1',
+            'CFBundleShortVersionString': APP_VERSION,
             'CFBundleName': 'BridgeIt',
             'CFBundleDisplayName': 'BridgeIt',
         },
