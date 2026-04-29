@@ -9,6 +9,7 @@
   <meta name="description" content="BridgeIt converts any image into a fabrication-ready SVG for laser cutting. Automatic background removal, contour tracing, floating island detection, and bridge tab generation. Free for Windows, macOS and Linux."/>
   <meta name="keywords" content="laser cutting SVG, laser cutter bridge generator, floating island laser cutting, image to SVG laser cutter, laser cut bridge tab, remove background laser cutting, LightBurn SVG, laser cutting software free, SVG converter laser, laser cutting islands"/>
   <link rel="canonical" href="https://outlandfabworks.github.io/BridgeIt/"/>
+  <meta name="robots" content="index, follow"/>
   <link rel="icon" type="image/x-icon" href="favicon.ico"/>
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png"/>
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png"/>
@@ -51,6 +52,98 @@
     }
   }
   </script>
+
+  <!-- FAQ rich results — Google shows these expanded directly in search -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What is a floating island in laser cutting?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "When you cut a shape that has a fully enclosed interior piece (like the counter of a letter O, or a logo with a hole in it), that interior piece is called a floating island. It has no connection to the surrounding material, so it falls away when cut. BridgeIt detects these automatically and adds thin bridge tabs that keep the island attached until you snap it free by hand."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What is a bridge tab in laser cutting?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "A bridge tab (also called a micro-tab or bridge) is a small uncut section of material that connects a floating island to its surrounding piece. BridgeIt adds these automatically to your SVG cut paths so your design stays in one piece after cutting."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does BridgeIt work with LightBurn?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. BridgeIt exports a standard SVG cut-path file that imports directly into LightBurn, RDWorks, LaserGRBL, and any other laser cutter software that accepts SVG files."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Is BridgeIt free?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes, completely free with no feature limits, no watermarks, and no account required. BridgeIt is open source under the MIT license."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What are the system requirements for BridgeIt?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Windows 10 or later (64-bit), macOS Apple Silicon (M1 or later), or Linux (Ubuntu 20.04+, Debian 11+, Fedora 36+, or any modern 64-bit distribution). No additional software required — the download is fully self-contained."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Why is the BridgeIt download so large (~500 MB)?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "BridgeIt bundles everything it needs to run — the background removal model, all libraries, and the runtime — so there is nothing else to install. You download once and it works immediately, with no Python or dependencies required."
+        }
+      }
+    ]
+  }
+  </script>
+
+  <!-- HowTo rich results for the steps section -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "HowTo",
+    "name": "How to convert an image to a laser cutting SVG with BridgeIt",
+    "description": "Turn any PNG or JPG into a fabrication-ready SVG with automatic bridge tab generation for laser cutting.",
+    "tool": [{"@type": "HowToTool", "name": "BridgeIt"}],
+    "step": [
+      {
+        "@type": "HowToStep",
+        "name": "Open an image",
+        "text": "Drop in any PNG, JPG, or SVG. BridgeIt shows the original immediately while processing in the background."
+      },
+      {
+        "@type": "HowToStep",
+        "name": "Background is removed automatically",
+        "text": "The background is removed automatically. Use the Erase or Lasso tools to clean up any remnants."
+      },
+      {
+        "@type": "HowToStep",
+        "name": "Review bridges",
+        "text": "BridgeIt highlights floating islands and suggests bridge placements. Delete unwanted ones, add your own, then confirm."
+      },
+      {
+        "@type": "HowToStep",
+        "name": "Export and cut",
+        "text": "Export the cut-path SVG straight into your laser cutter software such as LightBurn or RDWorks."
+      }
+    ]
+  }
+  </script>
+
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -406,6 +499,19 @@
   </div>
   <p class="note">Free · v1.0.4 · Windows, macOS &amp; Linux · Download. Extract. Done.<br/>
   <small style="font-size:0.75em;">macOS: Apple Silicon (M1+) only · right-click → Open on first launch</small></p>
+</section>
+
+<section style="max-width:780px;margin:0 auto 3rem;padding:0 1.5rem;text-align:center;">
+  <p style="font-size:1rem;color:var(--muted);line-height:1.8;">
+    BridgeIt is a free desktop application for Windows, macOS, and Linux that converts images into
+    fabrication-ready SVG files for laser cutting. It automatically removes the image background,
+    traces smooth vector contours, detects <strong style="color:var(--text)">floating islands</strong>
+    — interior pieces that would fall away when cut — and adds
+    <strong style="color:var(--text)">bridge tabs</strong> to keep them connected to the surrounding
+    material. The exported SVG cut-path file works directly in
+    <strong style="color:var(--text)">LightBurn</strong>, RDWorks, LaserGRBL, and any laser cutter
+    software that accepts SVG. No subscription, no watermarks, no account required.
+  </p>
 </section>
 
 <div class="screenshots">
