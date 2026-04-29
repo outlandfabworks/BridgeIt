@@ -6,8 +6,8 @@
 
   <!-- Primary SEO -->
   <title>BridgeIt: Free Laser Cutting SVG Converter with Auto Bridge Generation</title>
-  <meta name="description" content="BridgeIt converts any image into a fabrication-ready SVG for laser cutting. Automatic background removal, contour tracing, floating island detection, and bridge tab generation. Free for Windows, macOS and Linux."/>
-  <meta name="keywords" content="laser cutting SVG, laser cutter bridge generator, floating island laser cutting, image to SVG laser cutter, laser cut bridge tab, remove background laser cutting, LightBurn SVG, laser cutting software free, SVG converter laser, laser cutting islands"/>
+  <meta name="description" content="BridgeIt converts any image into a fabrication-ready SVG or DXF for laser cutting. Automatic background removal, contour tracing, floating island detection, and bridge tab generation. Free for Windows, macOS and Linux."/>
+  <meta name="keywords" content="laser cutting SVG, laser cutter bridge generator, floating island laser cutting, image to SVG laser cutter, laser cut bridge tab, remove background laser cutting, LightBurn SVG, laser cutting software free, SVG converter laser, laser cutting islands, DXF laser cutting, FreeCAD laser cut, Fusion 360 laser cutting, image to DXF"/>
   <link rel="canonical" href="https://outlandfabworks.github.io/BridgeIt/"/>
   <meta name="robots" content="index, follow"/>
   <link rel="icon" type="image/x-icon" href="favicon.ico"/>
@@ -41,10 +41,10 @@
       "price": "0",
       "priceCurrency": "USD"
     },
-    "description": "BridgeIt converts images into fabrication-ready SVGs for laser cutting. Features automatic background removal, contour tracing, floating island detection, and bridge tab generation.",
+    "description": "BridgeIt converts images into fabrication-ready SVG and DXF files for laser cutting. Features automatic background removal, contour tracing, floating island detection, bridge tab generation, and CAD-ready DXF export for Fusion 360 and FreeCAD.",
     "url": "https://outlandfabworks.github.io/BridgeIt/",
     "downloadUrl": "https://github.com/outlandfabworks/BridgeIt/releases/latest",
-    "softwareVersion": "1.0.6",
+    "softwareVersion": "1.5.0",
     "author": {
       "@type": "Organization",
       "name": "Outland Fab Works",
@@ -73,6 +73,14 @@
         "acceptedAnswer": {
           "@type": "Answer",
           "text": "A bridge tab (also called a micro-tab or bridge) is a small uncut section of material that connects a floating island to its surrounding piece. BridgeIt adds these automatically to your SVG cut paths so your design stays in one piece after cutting."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Can I import BridgeIt output into Fusion 360 or FreeCAD?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. Use the Export DXF button to save a CAD-ready DXF file. DXF is the native exchange format for Fusion 360, FreeCAD, AutoCAD, SolidWorks, and LibreCAD — it imports cleanly with correct physical dimensions in millimetres."
         }
       },
       {
@@ -138,7 +146,7 @@
       {
         "@type": "HowToStep",
         "name": "Export and cut",
-        "text": "Export the cut-path SVG straight into your laser cutter software such as LightBurn or RDWorks."
+        "text": "Export as SVG for LightBurn, RDWorks, or LaserGRBL, or as DXF for CAD tools like Fusion 360, FreeCAD, and AutoCAD."
       }
     ]
   }
@@ -481,7 +489,7 @@
     <img src="icon.png" alt="BridgeIt icon" loading="lazy"/>
   </div>
   <h1>Image to <span>laser-ready SVG</span><br/>with auto bridge generation</h1>
-  <p>BridgeIt removes backgrounds, traces clean vector outlines, detects floating islands, and automatically adds bridge tabs so your laser cut design stays in one piece.</p>
+  <p>BridgeIt removes backgrounds, traces clean vector outlines, detects floating islands, and automatically adds bridge tabs so your laser cut design stays in one piece. Export as SVG for LightBurn or DXF for Fusion 360 and FreeCAD.</p>
 
   <div class="download-row">
     <a class="btn-dl primary" href="https://github.com/outlandfabworks/BridgeIt/releases/latest/download/BridgeIt-windows.zip">
@@ -497,20 +505,21 @@
       Linux
     </a>
   </div>
-  <p class="note">Free · v1.0.6 · Windows, macOS &amp; Linux · Download. Extract. Done.<br/>
+  <p class="note">Free · v1.5.0 · Windows, macOS &amp; Linux · Download. Extract. Done.<br/>
   <small style="font-size:0.75em;">macOS: Apple Silicon (M1+) only · right-click → Open on first launch</small></p>
 </section>
 
 <section style="max-width:780px;margin:0 auto 3rem;padding:0 1.5rem;text-align:center;">
   <p style="font-size:1rem;color:var(--muted);line-height:1.8;">
     BridgeIt is a free desktop application for Windows, macOS, and Linux that converts images into
-    fabrication-ready SVG files for laser cutting. It automatically removes the image background,
+    fabrication-ready cut files for laser cutting. It automatically removes the image background,
     traces smooth vector contours, detects <strong style="color:var(--text)">floating islands</strong>
     — interior pieces that would fall away when cut — and adds
     <strong style="color:var(--text)">bridge tabs</strong> to keep them connected to the surrounding
-    material. The exported SVG cut-path file works directly in
-    <strong style="color:var(--text)">LightBurn</strong>, RDWorks, LaserGRBL, and any laser cutter
-    software that accepts SVG. No subscription, no watermarks, no account required.
+    material. Export as <strong style="color:var(--text)">SVG</strong> for LightBurn, RDWorks, and
+    LaserGRBL, or as <strong style="color:var(--text)">DXF</strong> for CAD tools like
+    <strong style="color:var(--text)">Fusion 360</strong>, FreeCAD, and AutoCAD.
+    No subscription, no watermarks, no account required.
   </p>
 </section>
 
@@ -562,6 +571,11 @@
     <p>Stroke-only paths ready for LightBurn, RDWorks, or any laser cutter software.</p>
   </div>
   <div class="feature">
+    <div class="feature-icon">📏</div>
+    <h3>DXF Export for CAD</h3>
+    <p>Export a CAD-ready DXF file that imports cleanly into Fusion 360, FreeCAD, AutoCAD, and SolidWorks with correct physical dimensions.</p>
+  </div>
+  <div class="feature">
     <div class="feature-icon">🌗</div>
     <h3>Dark, Light & OLED Themes</h3>
     <p>Three built-in themes. Automatically matches your OS dark/light mode preference.</p>
@@ -605,7 +619,7 @@
     <div class="step-num">4</div>
     <div class="step-text">
       <h3>Export and cut</h3>
-      <p>Export the cut-path SVG straight into your laser cutter software. Done.</p>
+      <p>Export as SVG for LightBurn and other laser software, or as DXF for Fusion 360, FreeCAD, and AutoCAD. Done.</p>
     </div>
   </div>
 </section>
@@ -621,6 +635,11 @@
   <div class="faq-item">
     <h3>What is a bridge tab in laser cutting?</h3>
     <p>A bridge tab (also called a micro-tab or bridge) is a small uncut section of material that connects a floating island to its surrounding piece. BridgeIt adds these automatically to your SVG cut paths so your design stays in one piece after cutting. You snap them off cleanly with a craft knife or your fingers.</p>
+  </div>
+
+  <div class="faq-item">
+    <h3>Can I import BridgeIt output into Fusion 360 or FreeCAD?</h3>
+    <p>Yes. Use the <strong>Export DXF</strong> button to save a CAD-ready DXF file. DXF is the native exchange format for Fusion 360, FreeCAD, AutoCAD, SolidWorks, and LibreCAD — it imports cleanly with correct physical dimensions in millimetres, no unit conversion needed.</p>
   </div>
 
   <div class="faq-item">
@@ -665,7 +684,7 @@
       Download for Linux
     </a>
   </div>
-  <p class="note">Free · v1.0.6 · Windows, macOS &amp; Linux · Download. Extract. Done.</p>
+  <p class="note">Free · v1.5.0 · Windows, macOS &amp; Linux · Download. Extract. Done.</p>
 </section>
 
 <section class="donate-section">
