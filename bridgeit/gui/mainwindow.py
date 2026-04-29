@@ -1057,31 +1057,29 @@ class MainWindow(QMainWindow):
             return   # user cancelled the dialog
 
         try:
-            from bridgeit.pipeline.export import export_svg
-            from bridgeit.pipeline.bridge import BridgeResult, mm_to_px
+            from bridgeit.pipeline.export import export_svg, _smooth_pts
+            from bridgeit.pipeline.bridge import BridgeResult, apply_manual_bridges
 
             br = self._last_result.bridge_result
-            bridge_px = mm_to_px(self._controls.get_settings().bridge_width_mm)
 
-            # Build the final path list:
-            # 1. Start from pre-bridge paths; apply all confirmed bridges via apply_manual_bridges
-            active_paths = [p for i, p in enumerate(self._last_result.paths)
-                            if i not in self._excluded_paths]
+            # Smooth pre-bridge paths first, THEN splice in bridges.
+            # This keeps bridge tabs as sharp rectangular geometry rather than
+            # letting Chaikin round the corners and pull the path inward.
+            active_paths = [
+                list(_smooth_pts(list(p)))
+                for i, p in enumerate(self._last_result.paths)
+                if i not in self._excluded_paths
+            ]
 
-            # 2. Splice manual bridges into their source paths.
-            # Unlike the old approach (appending a separate rectangle), this uses
-            # the same algorithm as the auto-bridge: it mutates the path that pt1
-            # lies on to detour out to pt2 and back, opening a physical tab gap.
             if self._manual_bridges:
-                from bridgeit.pipeline.bridge import apply_manual_bridges
                 active_paths = apply_manual_bridges(active_paths, self._manual_bridges)
 
-            # Wrap the modified paths back into a BridgeResult so export_svg can use it
             modified_br = BridgeResult(
                 paths=active_paths,
                 bridges=br.bridges,
                 image_size=br.image_size,
                 dpi=br.dpi,
+                already_smoothed=True,
             )
             written = export_svg(modified_br, path)
             self._set_status(f"Exported: {written}", success=True)
@@ -1110,15 +1108,18 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            from bridgeit.pipeline.export import export_dxf
-            from bridgeit.pipeline.bridge import BridgeResult, mm_to_px
+            from bridgeit.pipeline.export import export_dxf, _smooth_pts
+            from bridgeit.pipeline.bridge import BridgeResult, apply_manual_bridges
 
             br = self._last_result.bridge_result
-            active_paths = [p for i, p in enumerate(self._last_result.paths)
-                            if i not in self._excluded_paths]
+
+            active_paths = [
+                list(_smooth_pts(list(p)))
+                for i, p in enumerate(self._last_result.paths)
+                if i not in self._excluded_paths
+            ]
 
             if self._manual_bridges:
-                from bridgeit.pipeline.bridge import apply_manual_bridges
                 active_paths = apply_manual_bridges(active_paths, self._manual_bridges)
 
             modified_br = BridgeResult(
@@ -1126,6 +1127,7 @@ class MainWindow(QMainWindow):
                 bridges=br.bridges,
                 image_size=br.image_size,
                 dpi=br.dpi,
+                already_smoothed=True,
             )
             written = export_dxf(modified_br, path)
             self._set_status(f"DXF exported: {written}", success=True)

@@ -65,6 +65,7 @@ class BridgeResult:
     bridges: List[Bridge]     # metadata for debugging / UI display (dashed markers)
     image_size: Tuple[int, int]
     dpi: float = DEFAULT_DPI  # resolution used for mm↔px — needed for physical SVG units
+    already_smoothed: bool = False  # skip smoothing in export when paths were pre-smoothed
 
 
 def mm_to_px(mm: float, dpi: float = DEFAULT_DPI) -> float:

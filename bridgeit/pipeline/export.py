@@ -67,12 +67,11 @@ def export_svg(
         **{"stroke-width": stroke_width, "stroke-linecap": "round", "stroke-linejoin": "round"},
     )
 
-    # Add each path to the group, smoothed with Chaikin so circles and curves
-    # look clean rather than as polygonal approximations of the traced contour.
     for i, path in enumerate(result.paths):
         if len(path) < 2:
             continue
-        cut_group.add(dwg.path(d=_smooth_d(list(path)), id=f"path_{i}"))
+        d = _pts_to_d(list(path)) if result.already_smoothed else _smooth_d(list(path))
+        cut_group.add(dwg.path(d=d, id=f"path_{i}"))
 
     dwg.add(cut_group)
 
@@ -124,12 +123,10 @@ def export_dxf(
     for path in result.paths:
         if len(path) < 2:
             continue
-        # Apply the same smoothing as SVG export, then convert px → mm
-        # and flip Y axis (screen Y-down → CAD Y-up)
-        smoothed = _smooth_pts(list(path))
+        pts = list(path) if result.already_smoothed else _smooth_pts(list(path))
         pts_mm = [
             (x * 25.4 / dpi, (h - y) * 25.4 / dpi)
-            for x, y in smoothed
+            for x, y in pts
         ]
         msp.add_lwpolyline(pts_mm, dxfattribs={"layer": "CUT", "closed": True})
 
@@ -367,6 +364,17 @@ def _smooth_d(path: Path2D) -> str:
     if len(pts) == 2:
         return (f"M {pts[0][0]:.2f} {pts[0][1]:.2f} "
                 f"L {pts[1][0]:.2f} {pts[1][1]:.2f} Z")
+    parts = [f"M {pts[0][0]:.2f} {pts[0][1]:.2f}"]
+    for x, y in pts[1:]:
+        parts.append(f"L {x:.2f} {y:.2f}")
+    parts.append("Z")
+    return " ".join(parts)
+
+
+def _pts_to_d(pts: list) -> str:
+    """Format an already-smooth point list as an SVG 'd' string (no smoothing applied)."""
+    if len(pts) < 2:
+        return ""
     parts = [f"M {pts[0][0]:.2f} {pts[0][1]:.2f}"]
     for x, y in pts[1:]:
         parts.append(f"L {x:.2f} {y:.2f}")
