@@ -255,15 +255,14 @@ def export_image_svg(
     return out
 
 
-def _smooth_d(path: Path2D, iterations: int = 4) -> str:
-    """Convert a closed path to a smooth SVG path using Chaikin corner-cutting.
+def _smooth_d(path: Path2D) -> str:
+    """Convert a closed path to a smooth SVG path using quadratic B-spline curves.
 
-    Vertices are first redistributed at uniform arc-length spacing before the
-    corner-cutting iterations.  Without this step, clusters of closely-spaced
-    staircase vertices (dense on horizontal/vertical circle sections, sparse at
-    45° diagonals) cause uneven corner-cutting that manifests as visible ripples
-    on otherwise smooth curves.  Uniform spacing ensures the Chaikin limit curve
-    has consistent curvature throughout.
+    Vertices are redistributed at uniform arc-length spacing, then output as
+    SVG quadratic Bézier Q commands.  Each resampled point is a B-spline control
+    point; on-curve points are the midpoints between consecutive control points.
+    This produces true mathematical curves rather than dense polylines, giving
+    CAD tools (FreeCAD, Fusion 360, etc.) proper curve geometry to work with.
     """
     import math
 
@@ -277,12 +276,10 @@ def _smooth_d(path: Path2D, iterations: int = 4) -> str:
         return (f"M {pts[0][0]:.2f} {pts[0][1]:.2f} "
                 f"L {pts[1][0]:.2f} {pts[1][1]:.2f} Z")
 
-    # ── Step 1: uniform arc-length resampling ────────────────────────────
-    # Resample to at least 256 points at equal arc-length spacing.
-    # Two benefits: (a) uniform spacing removes ripples from uneven staircase
-    # vertex density; (b) more control points → denser Chaikin B-spline →
-    # less deviation between the B-spline and the polygon it approximates.
-    # Cap at 512 to keep file sizes reasonable for complex shapes.
+    # ── Uniform arc-length resampling ────────────────────────────────────
+    # Resample to evenly-spaced control points so the B-spline has consistent
+    # curvature. Without this, staircase vertices cluster on axis-aligned edges
+    # and produce ripples. Cap at 512 for complex shapes.
     resample_n = max(256, min(n, 512))
     closed = pts + [pts[0]]
     cumlen = [0.0]
@@ -309,22 +306,21 @@ def _smooth_d(path: Path2D, iterations: int = 4) -> str:
             target += step
         pts = resampled
 
-    # ── Step 2: Chaikin corner-cutting ───────────────────────────────────
-    # With uniform spacing the subdivision is even and the resulting
-    # quadratic B-spline has no curvature ripples.
-    for _ in range(iterations):
-        new_pts: list = []
-        m = len(pts)
-        for i in range(m):
-            p1 = pts[i]
-            p2 = pts[(i + 1) % m]
-            new_pts.append((0.75 * p1[0] + 0.25 * p2[0], 0.75 * p1[1] + 0.25 * p2[1]))
-            new_pts.append((0.25 * p1[0] + 0.75 * p2[0], 0.25 * p1[1] + 0.75 * p2[1]))
-        pts = new_pts
+    # ── Quadratic B-spline → SVG Q commands ─────────────────────────────
+    # Each segment runs from mid(P[i-1], P[i]) to mid(P[i], P[i+1]) with
+    # P[i] as the quadratic Bézier control point — the standard uniform
+    # quadratic B-spline decomposition.
+    m = len(pts)
 
-    parts = [f"M {pts[0][0]:.2f} {pts[0][1]:.2f}"]
-    for x, y in pts[1:]:
-        parts.append(f"L {x:.2f} {y:.2f}")
+    def mid(a, b):
+        return ((a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5)
+
+    start = mid(pts[-1], pts[0])
+    parts = [f"M {start[0]:.2f} {start[1]:.2f}"]
+    for i in range(m):
+        cp = pts[i]
+        ep = mid(pts[i], pts[(i + 1) % m])
+        parts.append(f"Q {cp[0]:.2f} {cp[1]:.2f} {ep[0]:.2f} {ep[1]:.2f}")
     parts.append("Z")
     return " ".join(parts)
 
