@@ -1855,7 +1855,7 @@ class MainWindow(QMainWindow):
     @pyqtSlot()
     def _on_update_clicked(self) -> None:
         import webbrowser
-        webbrowser.open("https://github.com/outlandfabworks/BridgeIt/releases/latest")
+        webbrowser.open("https://outlandfabworks.github.io/BridgeIt/")
 
     def _maybe_show_donation_prompt(self) -> None:
         """Show a one-time donation prompt after every 3rd successful export.
