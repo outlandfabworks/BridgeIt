@@ -2,7 +2,7 @@
 
 # The app name and version shown in the window title and toolbar
 APP_NAME = "BridgeIt"
-APP_VERSION = "1.0.5"
+APP_VERSION = "1.0.5.1"
 
 # ── Pipeline defaults ──────────────────────────────────────────────────────
 # These are the starting values used when no user has changed a setting yet.
