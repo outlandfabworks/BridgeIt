@@ -1114,6 +1114,7 @@ class MainWindow(QMainWindow):
                 path,
                 smoothing=settings.contour_smoothing,
                 min_area=settings.min_contour_area,
+                dpi=settings.dpi,
             )
             self._set_status(f"SVG image exported: {written}", success=True)
         except Exception as exc:

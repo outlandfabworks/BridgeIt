@@ -64,6 +64,7 @@ class BridgeResult:
     paths: List[Path2D]       # modified paths (islands now bridged into one outline)
     bridges: List[Bridge]     # metadata for debugging / UI display (dashed markers)
     image_size: Tuple[int, int]
+    dpi: float = DEFAULT_DPI  # resolution used for mm↔px — needed for physical SVG units
 
 
 def mm_to_px(mm: float, dpi: float = DEFAULT_DPI) -> float:
@@ -102,7 +103,7 @@ def add_bridges(
 
     # If no islands were found, there's nothing to bridge — return paths as-is
     if not analysis.islands:
-        return BridgeResult(paths=paths, bridges=[], image_size=analysis.image_size)
+        return BridgeResult(paths=paths, bridges=[], image_size=analysis.image_size, dpi=dpi)
 
     # Process each island in turn, finding its nearest neighbour and inserting a bridge
     for island in analysis.islands:
@@ -110,7 +111,7 @@ def add_bridges(
         if bridge:
             bridges.append(bridge)
 
-    return BridgeResult(paths=paths, bridges=bridges, image_size=analysis.image_size)
+    return BridgeResult(paths=paths, bridges=bridges, image_size=analysis.image_size, dpi=dpi)
 
 
 def _bridge_island(

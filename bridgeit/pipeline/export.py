@@ -25,7 +25,7 @@ from bridgeit.pipeline.trace import Path2D
 # Black stroke is the universal signal for "cut here" in laser RIP software.
 CUT_STROKE = "#000000"
 CUT_FILL = "none"           # shapes are outlines only, not filled
-CUT_STROKE_WIDTH = "0.1px"  # Hairline — as thin as possible for clean cuts
+CUT_STROKE_WIDTH = "0.1"    # Hairline in user units — scales with document physical size
 
 
 
@@ -41,9 +41,14 @@ def export_svg(
     out.parent.mkdir(parents=True, exist_ok=True)
 
     w, h = result.image_size
+    dpi = result.dpi
 
-    # Create the SVG document with explicit pixel dimensions matching the source image
-    dwg = svgwrite.Drawing(filename=str(out), size=(f"{w}px", f"{h}px"), profile="full")
+    # Express document size in millimetres so CAD tools (FreeCAD, Inkscape, etc.)
+    # know the physical dimensions. The viewBox stays in pixel coordinates so all
+    # path data is unchanged; the browser/renderer scales user-units → mm.
+    w_mm = w * 25.4 / dpi
+    h_mm = h * 25.4 / dpi
+    dwg = svgwrite.Drawing(filename=str(out), size=(f"{w_mm:.4f}mm", f"{h_mm:.4f}mm"), profile="full")
 
     # viewBox defines the coordinate space — 0,0 to w,h matches our pixel coordinates
     dwg.viewbox(0, 0, w, h)
@@ -89,6 +94,7 @@ def export_image_svg(
     output_path: str | Path,
     smoothing: float = 2.0,
     min_area: float = 50.0,
+    dpi: float = 96.0,
 ) -> Path:
     """Export the background-removed image as a filled vector SVG.
 
@@ -142,7 +148,9 @@ def export_image_svg(
     out = Path(output_path).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    dwg = svgwrite.Drawing(filename=str(out), size=(f"{w}px", f"{h}px"), profile="full")
+    w_mm = w * 25.4 / dpi
+    h_mm = h * 25.4 / dpi
+    dwg = svgwrite.Drawing(filename=str(out), size=(f"{w_mm:.4f}mm", f"{h_mm:.4f}mm"), profile="full")
     dwg.viewbox(0, 0, w, h)
     dwg.set_desc(title="BridgeIt SVG Image", desc="Filled vector export")
     dwg.add(dwg.rect(insert=(0, 0), size=(w, h), fill="#ffffff"))
