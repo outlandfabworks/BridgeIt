@@ -56,6 +56,9 @@ hiddenimports += [
     'multiprocessing.resource_tracker',
     'multiprocessing.synchronize',
     'pkg_resources.py2_warn',
+    # ezdxf
+    'ezdxf',
+    'ezdxf.units',
 ]
 
 # ── Analysis ──────────────────────────────────────────────────────────────────

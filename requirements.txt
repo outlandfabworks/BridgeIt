@@ -7,3 +7,4 @@ svgwrite>=1.4.3
 Pillow>=10.2.0
 numpy>=1.26.0
 onnxruntime>=1.17.0
+ezdxf>=1.1.0

@@ -162,6 +162,20 @@ _ICONS: dict[str, str] = {
                 stroke-linecap="round" stroke-linejoin="round"/>
     </svg>""",
 
+    # Export DXF — up-arrow with "DXF" text label
+    "export_dxf": """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none">
+      <rect x="3" y="13" width="14" height="4" rx="1.5"
+            stroke="COLOR" stroke-width="1.5"/>
+      <line x1="10" y1="10" x2="10" y2="2"
+            stroke="COLOR" stroke-width="1.6" stroke-linecap="round"/>
+      <polyline points="7,5.5 10,2 13,5.5"
+                stroke="COLOR" stroke-width="1.6"
+                stroke-linejoin="round" stroke-linecap="round"/>
+      <text x="10" y="16.8" font-size="3.8" font-family="monospace"
+            text-anchor="middle" fill="COLOR" stroke="none">DXF</text>
+    </svg>""",
+
     # About — circle with "i" inside
     "about": """
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none">

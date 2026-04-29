@@ -471,6 +471,14 @@ class MainWindow(QMainWindow):
         self._btn_export_image.clicked.connect(self._on_export_image_svg)
         hlay.addWidget(self._btn_export_image)
 
+        self._btn_export_dxf = self._header_btn(
+            "export_dxf",
+            "Export DXF  — CAD-ready file for Fusion 360, FreeCAD, AutoCAD",
+        )
+        self._btn_export_dxf.setEnabled(False)
+        self._btn_export_dxf.clicked.connect(self._on_export_dxf_clicked)
+        hlay.addWidget(self._btn_export_dxf)
+
         hlay.addSpacing(4)
         hlay.addWidget(self._header_sep())
         hlay.addSpacing(4)
@@ -938,6 +946,7 @@ class MainWindow(QMainWindow):
         self._controls.reset_info()
         self._btn_export.setEnabled(False)
         self._btn_export_image.setEnabled(False)
+        self._btn_export_dxf.setEnabled(False)
         self._btn_view_svg.setEnabled(False)
         self._btn_delete.setEnabled(False)
         self._btn_add_bridge.setEnabled(False)
@@ -1080,6 +1089,50 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             _LOG.exception("SVG export failed")
             self._set_status(f"Export failed: {exc}", error=True)
+
+    @pyqtSlot()
+    def _on_export_dxf_clicked(self) -> None:
+        """Save the current design as a CAD-ready DXF file."""
+        if not self._last_result or not self._last_result.bridge_result:
+            return
+
+        default_name = "output.dxf"
+        if self._last_result.source_path:
+            default_name = self._last_result.source_path.with_suffix(".dxf").name
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export DXF",
+            default_name,
+            "DXF Files (*.dxf);;All Files (*)",
+        )
+        if not path:
+            return
+
+        try:
+            from bridgeit.pipeline.export import export_dxf
+            from bridgeit.pipeline.bridge import BridgeResult, mm_to_px
+
+            br = self._last_result.bridge_result
+            active_paths = [p for i, p in enumerate(self._last_result.paths)
+                            if i not in self._excluded_paths]
+
+            if self._manual_bridges:
+                from bridgeit.pipeline.bridge import apply_manual_bridges
+                active_paths = apply_manual_bridges(active_paths, self._manual_bridges)
+
+            modified_br = BridgeResult(
+                paths=active_paths,
+                bridges=br.bridges,
+                image_size=br.image_size,
+                dpi=br.dpi,
+            )
+            written = export_dxf(modified_br, path)
+            self._set_status(f"DXF exported: {written}", success=True)
+            self._maybe_show_donation_prompt()
+        except Exception as exc:
+            _LOG.exception("DXF export failed")
+            self._set_status(f"DXF export failed: {exc}", error=True)
 
     @pyqtSlot()
     def _on_export_image_svg(self) -> None:
@@ -1535,6 +1588,7 @@ class MainWindow(QMainWindow):
 
         self._btn_export.setEnabled(True)
         self._btn_export_image.setEnabled(True)
+        self._btn_export_dxf.setEnabled(True)
         self._btn_erase.setEnabled(True)
         self._btn_crop.setEnabled(True)
         self._controls.set_controls_enabled(True)
@@ -1557,6 +1611,7 @@ class MainWindow(QMainWindow):
         if self._last_result:
             self._btn_export.setEnabled(True)
             self._btn_export_image.setEnabled(True)
+            self._btn_export_dxf.setEnabled(True)
             self._btn_erase.setEnabled(True)
             self._btn_crop.setEnabled(True)
             self._controls.set_controls_enabled(True)

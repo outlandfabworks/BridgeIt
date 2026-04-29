@@ -1,9 +1,12 @@
 """
-export.py — SVG export stage.
+export.py — SVG and DXF export stages.
 
-Two output modes:
+SVG modes:
   export_svg()         — fabrication file: black hairline stroke on white bg
   export_image_svg()   — filled, coloured vector matching the original artwork
+
+DXF mode:
+  export_dxf()         — CAD-ready file for Fusion 360, FreeCAD, AutoCAD, etc.
 """
 
 from __future__ import annotations
@@ -87,6 +90,49 @@ def export_svg_string(result: BridgeResult) -> str:
         export_svg(result, tmp_path)
         with open(tmp_path, "r", encoding="utf-8") as f:
             return f.read()
+
+
+def export_dxf(
+    result: BridgeResult,
+    output_path: str | Path,
+) -> Path:
+    """Write fabrication-ready DXF to disk.
+
+    Each cut path is written as a closed LWPOLYLINE on the CUT layer in
+    millimetre units.  DXF is the native exchange format for CAD tools
+    (Fusion 360, FreeCAD, AutoCAD, SolidWorks) and handles physical units
+    without the per-application quirks of SVG import.
+
+    Coordinate system: DXF Y increases upward; screen/SVG Y increases downward.
+    We flip Y so the geometry is right-side-up in CAD viewports.
+    """
+    import ezdxf
+
+    out = Path(output_path).resolve()
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    w, h = result.image_size
+    dpi = result.dpi
+
+    doc = ezdxf.new(dxfversion="R2010")
+    doc.units = ezdxf.units.MM
+
+    doc.layers.add("CUT", color=7)  # white/black — standard laser cut layer colour
+
+    msp = doc.modelspace()
+
+    for path in result.paths:
+        if len(path) < 2:
+            continue
+        # Convert px → mm and flip Y axis (screen→CAD coordinate system)
+        pts_mm = [
+            (x * 25.4 / dpi, (h - y) * 25.4 / dpi)
+            for x, y in path
+        ]
+        msp.add_lwpolyline(pts_mm, dxfattribs={"layer": "CUT", "closed": True})
+
+    doc.saveas(str(out))
+    return out
 
 
 def export_image_svg(
