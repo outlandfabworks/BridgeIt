@@ -1072,6 +1072,7 @@ class MainWindow(QMainWindow):
                 paths=active_paths,
                 bridges=br.bridges,
                 image_size=br.image_size,
+                dpi=br.dpi,
             )
             written = export_svg(modified_br, path)
             self._set_status(f"Exported: {written}", success=True)
