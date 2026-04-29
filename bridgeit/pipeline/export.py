@@ -124,10 +124,12 @@ def export_dxf(
     for path in result.paths:
         if len(path) < 2:
             continue
-        # Convert px → mm and flip Y axis (screen→CAD coordinate system)
+        # Apply the same smoothing as SVG export, then convert px → mm
+        # and flip Y axis (screen Y-down → CAD Y-up)
+        smoothed = _smooth_pts(list(path))
         pts_mm = [
             (x * 25.4 / dpi, (h - y) * 25.4 / dpi)
-            for x, y in path
+            for x, y in smoothed
         ]
         msp.add_lwpolyline(pts_mm, dxfattribs={"layer": "CUT", "closed": True})
 
@@ -301,15 +303,11 @@ def export_image_svg(
     return out
 
 
-def _smooth_d(path: Path2D, iterations: int = 4) -> str:
-    """Convert a closed path to a smooth SVG path using Chaikin corner-cutting.
+def _smooth_pts(path: Path2D, iterations: int = 4) -> list:
+    """Return smoothed (x, y) points using arc-length resampling + Chaikin.
 
-    Vertices are first redistributed at uniform arc-length spacing before the
-    corner-cutting iterations.  Without this step, clusters of closely-spaced
-    staircase vertices (dense on horizontal/vertical circle sections, sparse at
-    45° diagonals) cause uneven corner-cutting that manifests as visible ripples
-    on otherwise smooth curves.  Uniform spacing ensures the Chaikin limit curve
-    has consistent curvature throughout.
+    Shared by both SVG and DXF export so the output geometry is identical
+    regardless of file format.
     """
     import math
 
@@ -318,10 +316,7 @@ def _smooth_d(path: Path2D, iterations: int = 4) -> str:
         pts = pts[:-1]
     n = len(pts)
     if n < 2:
-        return ""
-    if n == 2:
-        return (f"M {pts[0][0]:.2f} {pts[0][1]:.2f} "
-                f"L {pts[1][0]:.2f} {pts[1][1]:.2f} Z")
+        return pts
 
     # ── Step 1: uniform arc-length resampling ────────────────────────────
     resample_n = max(256, min(n, 512))
@@ -361,6 +356,17 @@ def _smooth_d(path: Path2D, iterations: int = 4) -> str:
             new_pts.append((0.25 * p1[0] + 0.75 * p2[0], 0.25 * p1[1] + 0.75 * p2[1]))
         pts = new_pts
 
+    return pts
+
+
+def _smooth_d(path: Path2D) -> str:
+    """Convert a closed path to a smooth SVG 'd' string."""
+    pts = _smooth_pts(path)
+    if len(pts) < 2:
+        return ""
+    if len(pts) == 2:
+        return (f"M {pts[0][0]:.2f} {pts[0][1]:.2f} "
+                f"L {pts[1][0]:.2f} {pts[1][1]:.2f} Z")
     parts = [f"M {pts[0][0]:.2f} {pts[0][1]:.2f}"]
     for x, y in pts[1:]:
         parts.append(f"L {x:.2f} {y:.2f}")
