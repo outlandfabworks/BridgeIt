@@ -1108,13 +1108,15 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            from bridgeit.pipeline.export import export_dxf, _smooth_pts
+            from bridgeit.pipeline.export import export_dxf, _resample_pts
             from bridgeit.pipeline.bridge import BridgeResult, apply_manual_bridges
 
             br = self._last_result.bridge_result
 
+            # Light resample (64 pts) — smooth enough for CAD, won't crash FreeCAD.
+            # Bridge geometry is spliced in AFTER resampling so tabs stay sharp.
             active_paths = [
-                list(_smooth_pts(list(p)))
+                list(_resample_pts(list(p), n=64))
                 for i, p in enumerate(self._last_result.paths)
                 if i not in self._excluded_paths
             ]

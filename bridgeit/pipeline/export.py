@@ -123,7 +123,9 @@ def export_dxf(
     for path in result.paths:
         if len(path) < 2:
             continue
-        pts = list(path) if result.already_smoothed else _smooth_pts(list(path))
+        # Use light resample (64 pts, no Chaikin) — full Chaikin produces 4000+
+        # points per path which crashes FreeCAD's Draft-to-Sketch conversion.
+        pts = _resample_pts(list(path), n=64)
         pts_mm = [
             (x * 25.4 / dpi, (h - y) * 25.4 / dpi)
             for x, y in pts
@@ -369,6 +371,48 @@ def _smooth_d(path: Path2D) -> str:
         parts.append(f"L {x:.2f} {y:.2f}")
     parts.append("Z")
     return " ".join(parts)
+
+
+def _resample_pts(path: Path2D, n: int = 64) -> list:
+    """Arc-length resample to exactly n evenly-spaced points — no smoothing.
+
+    Used for DXF export where CAD tools need a manageable point count.
+    Chaikin would generate 4000+ points per path which crashes FreeCAD's
+    Draft-to-Sketch conversion; 64 points is plenty for accurate geometry.
+    """
+    import math
+
+    pts = list(path)
+    if len(pts) >= 2 and pts[0] == pts[-1]:
+        pts = pts[:-1]
+    if len(pts) < 2:
+        return pts
+
+    closed = pts + [pts[0]]
+    cumlen = [0.0]
+    for i in range(len(closed) - 1):
+        dx = closed[i + 1][0] - closed[i][0]
+        dy = closed[i + 1][1] - closed[i][1]
+        cumlen.append(cumlen[-1] + math.hypot(dx, dy))
+    total = cumlen[-1]
+    if total < 1e-6:
+        return pts
+
+    step = total / n
+    target = 0.0
+    resampled: list = []
+    seg = 0
+    for _ in range(n):
+        while seg + 1 < len(cumlen) - 1 and cumlen[seg + 1] < target:
+            seg += 1
+        seg_len = cumlen[seg + 1] - cumlen[seg]
+        t = (target - cumlen[seg]) / seg_len if seg_len > 1e-9 else 0.0
+        resampled.append((
+            closed[seg][0] + t * (closed[seg + 1][0] - closed[seg][0]),
+            closed[seg][1] + t * (closed[seg + 1][1] - closed[seg][1]),
+        ))
+        target += step
+    return resampled
 
 
 def _pts_to_d(pts: list) -> str:
