@@ -123,9 +123,10 @@ def export_dxf(
     for path in result.paths:
         if len(path) < 2:
             continue
-        # Use light resample (64 pts, no Chaikin) — full Chaikin produces 4000+
-        # points per path which crashes FreeCAD's Draft-to-Sketch conversion.
-        pts = _resample_pts(list(path), n=64)
+        # If mainwindow already resampled + bridged, use as-is to avoid
+        # double-resampling which distorts bridge geometry. Otherwise apply
+        # light resample (64 pts, no Chaikin) so FreeCAD doesn't crash.
+        pts = list(path) if result.already_smoothed else _resample_pts(list(path), n=64)
         pts_mm = [
             (x * 25.4 / dpi, (h - y) * 25.4 / dpi)
             for x, y in pts
