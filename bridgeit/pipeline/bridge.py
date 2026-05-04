@@ -259,30 +259,45 @@ def _insert_bridge_into_path(
     c = (target_pt[0] - px * half_w, target_pt[1] - py * half_w)
     d = (target_pt[0] + px * half_w, target_pt[1] + py * half_w)
 
-    # Find the index in the path where the bridge should be spliced in.
-    # We insert near the point on the island path closest to island_pt.
-    insert_idx = _find_nearest_segment(path, island_pt)
+    # Find the segment (path[i], path[i+1]) nearest to island_pt and insert
+    # the bridge between those two vertices.  Inserting at i+1 means the path
+    # flows: path[i] → a → [bridge] → b → path[i+1] with no diagonal jump.
+    seg_idx = _find_nearest_segment(path, island_pt)
+    insert_idx = (seg_idx + 1) % len(path)
 
-    # Splice the bridge points into the path at that index.
-    # The order a → d → target_pt → c → b traces the bridge rectangle
-    # and back, keeping the cut path as one continuous closed loop.
     bridge_pts = [a, d, target_pt, c, b]
     path[insert_idx:insert_idx] = bridge_pts
 
 
 def _find_nearest_segment(path: Path2D, pt: Tuple[float, float]) -> int:
-    """Return the index of the path point closest to pt."""
-    min_dist = math.inf
-    best_idx = 0
-    px, py = pt
+    """Return index i of the segment (path[i], path[i+1]) nearest to pt.
 
-    # Linear search through all path vertices — straightforward and fast
-    # enough for the path sizes we deal with (typically hundreds of points)
-    for i, (x, y) in enumerate(path):
-        d = math.hypot(x - px, y - py)
-        if d < min_dist:
-            min_dist = d
+    Projects pt onto each segment and measures the true perpendicular distance,
+    so the returned index is the segment the bridge should split — not just the
+    nearest vertex.  Inserting at i+1 places bridge geometry between the two
+    segment endpoints, keeping the path flowing smoothly through the attachment.
+    """
+    px, py = pt
+    n = len(path)
+    best_dist = math.inf
+    best_idx = 0
+
+    for i in range(n):
+        ax, ay = path[i]
+        bx, by = path[(i + 1) % n]
+        dx, dy = bx - ax, by - ay
+        seg_len_sq = dx * dx + dy * dy
+        if seg_len_sq < 1e-12:
+            t = 0.0
+        else:
+            t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / seg_len_sq))
+        near_x = ax + t * dx
+        near_y = ay + t * dy
+        d = math.hypot(px - near_x, py - near_y)
+        if d < best_dist:
+            best_dist = d
             best_idx = i
+
     return best_idx
 
 
