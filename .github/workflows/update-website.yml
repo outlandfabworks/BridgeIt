@@ -52,3 +52,7 @@ jobs:
           git diff --staged --quiet && echo "No changes" || \
             git commit -m "Auto-update website to v${{ steps.version.outputs.VERSION }} [skip ci]" && \
             git push origin main
+
+      - name: Remind about CHANGELOG
+        run: |
+          echo "::notice title=Don't forget::Update CHANGELOG.md with user-friendly release notes for v${{ steps.version.outputs.VERSION }}"
