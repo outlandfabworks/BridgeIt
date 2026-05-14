@@ -15,6 +15,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
+          fetch-depth: 0  # needed so git log can see all tags
 
       - name: Extract version from tag
         id: version
@@ -23,36 +24,73 @@ jobs:
       - name: Update version in index.html
         run: |
           python3 - <<'EOF'
-          import re, sys
+          import re
 
           version = "${{ steps.version.outputs.VERSION }}"
           path = "docs/index.html"
 
           content = open(path).read()
-
-          # Replace v1.2.3 or v1.2.3.4 display strings
           content = re.sub(r'v\d+\.\d+\.\d+(\.\d+)?', f'v{version}', content)
-
-          # Replace softwareVersion JSON-LD field
           content = re.sub(
               r'"softwareVersion":\s*"[^"]+"',
               f'"softwareVersion": "{version}"',
               content
           )
-
           open(path, "w").write(content)
           print(f"Updated to v{version}")
+          EOF
+
+      - name: Prepend CHANGELOG entry
+        run: |
+          python3 - <<'EOF'
+          import subprocess, datetime
+
+          version = "${{ steps.version.outputs.VERSION }}"
+          date = datetime.date.today().isoformat()
+
+          # Find the previous tag
+          tags = subprocess.run(
+              ['git', 'tag', '--sort=-creatordate'],
+              capture_output=True, text=True
+          ).stdout.strip().split('\n')
+          prev_tags = [t for t in tags if t and t != f'v{version}']
+          prev_tag = prev_tags[0] if prev_tags else None
+
+          # Get commits since previous tag
+          if prev_tag:
+              log = subprocess.run(
+                  ['git', 'log', f'{prev_tag}..HEAD', '--pretty=format:- %s'],
+                  capture_output=True, text=True
+              ).stdout.strip()
+              skip = {'[skip ci]', 'Bump version', 'Auto-update website', 'Auto-update website and changelog'}
+              commits = '\n'.join(
+                  line for line in log.split('\n')
+                  if line and not any(s in line for s in skip)
+              ) or '- Minor fixes and improvements'
+          else:
+              commits = '- Initial release'
+
+          entry = f"## [{version}] - {date}\n### Changes\n{commits}\n\n---\n\n"
+
+          content = open('CHANGELOG.md').read()
+          # Insert after the title block, before the first existing version entry
+          marker = '\n---\n\n'
+          idx = content.find(marker)
+          if idx != -1:
+              content = content[:idx + len(marker)] + entry + content[idx + len(marker):]
+          else:
+              content = content.rstrip() + '\n\n' + entry
+
+          open('CHANGELOG.md', 'w').write(content)
+          print(f"Prepended changelog entry for v{version}")
           EOF
 
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/index.html
-          git diff --staged --quiet && echo "No changes" || \
-            git commit -m "Auto-update website to v${{ steps.version.outputs.VERSION }} [skip ci]" && \
-            git push origin main
-
-      - name: Remind about CHANGELOG
-        run: |
-          echo "::notice title=Don't forget::Update CHANGELOG.md with user-friendly release notes for v${{ steps.version.outputs.VERSION }}"
+          git add docs/index.html CHANGELOG.md
+          git diff --staged --quiet && echo "No changes" || ( \
+            git commit -m "Auto-update website and changelog to v${{ steps.version.outputs.VERSION }} [skip ci]" && \
+            git push origin main \
+          )
