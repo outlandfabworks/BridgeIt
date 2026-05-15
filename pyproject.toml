@@ -4,7 +4,7 @@ build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "bridgeit"
-version = "1.0.4"
+version = "1.5.4"
 description = "Convert images to fabrication-ready SVGs with automatic bridge generation"
 readme = "README.md"
 license = {text = "MIT"}
@@ -31,6 +31,7 @@ dependencies = [
     "Pillow>=10.2.0",
     "numpy>=1.26.0",
     "onnxruntime>=1.17.0",
+    "ezdxf>=1.1.0",
 ]
 
 [project.scripts]
