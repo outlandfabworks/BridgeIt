@@ -2,7 +2,7 @@
 export.py — SVG and DXF export stages.
 
 SVG modes:
-  export_svg()         — fabrication file: black hairline stroke on white bg
+  export_svg()         — fabrication file: black hairline stroke, transparent bg
   export_image_svg()   — filled, coloured vector matching the original artwork
 
 DXF mode:
@@ -201,8 +201,6 @@ def export_image_svg(
     dwg = svgwrite.Drawing(filename=str(out), size=(f"{w_mm:.4f}mm", f"{h_mm:.4f}mm"), profile="full")
     dwg.viewbox(0, 0, w, h)
     dwg.set_desc(title="BridgeIt SVG Image", desc="Filled vector export")
-    dwg.add(dwg.rect(insert=(0, 0), size=(w, h), fill="#ffffff"))
-
     if hierarchy is None or len(raw_contours) == 0:
         dwg.save(pretty=False)
         return out
