@@ -4,6 +4,17 @@ All notable changes to BridgeIt are listed here.
 
 ---
 
+## [1.5.5] - 2026-05-26
+### Changes
+- Fix image SVG export including white background
+- Fix pyproject.toml: add ezdxf, bump version to 1.5.4
+- Auto-generate CHANGELOG entry on tag push
+- Add CHANGELOG.md and website release history section
+- Fix: Outland Fab Works → Outland Fabworks
+- Add Outland Fabworks cross-link to nav and footer
+
+---
+
 ## [1.5.4] - 2026-05-04
 ### Fixed
 - Bridge tabs now attach cleanly to the path without diagonal artifacts. Previously the bridge was snapping to the nearest vertex which could cause a line to shoot off at a wrong angle; it now finds the exact point on the path edge and inserts cleanly between two vertices.
