@@ -5,16 +5,15 @@ Each icon is defined as an SVG string with "COLOR" as a placeholder,
 which is replaced at render time with the actual theme colour.
 
 Usage:
-    from bridgeit.gui.icons import make_icon
+    from bridgeit.gui.icons import _ICONS, make_icon
     btn.setIcon(make_icon("open", color="#ffffff", size=20))
 """
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QByteArray, QRectF, QSize
+from PyQt6.QtCore import QByteArray, QRectF, Qt
 from PyQt6.QtGui import QIcon, QPainter, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
-from PyQt6.QtCore import Qt
 
 # ---------------------------------------------------------------------------
 # SVG definitions — 20×20 viewBox, "COLOR" replaced at render time
@@ -191,20 +190,6 @@ _ICONS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 def make_icon(name: str, color: str = "#ffffff", size: int = 20) -> QIcon:
-    """Render a named SVG icon as a QIcon using the given fill/stroke colour.
-
-    The SVG template uses "COLOR" as a placeholder which is substituted before
-    rendering.  The result is anti-aliased and transparent-background.
-
-    Args:
-        name:   Key into _ICONS dict (e.g. "open", "export").
-        color:  CSS hex colour string (e.g. "#e2e8f0").
-        size:   Pixel size for the square pixmap (default 20).
-
-    Returns:
-        A QIcon with a single pixmap at the requested size.
-        Returns an empty QIcon if the name is not recognised.
-    """
     template = _ICONS.get(name)
     if not template:
         return QIcon()
@@ -221,8 +206,3 @@ def make_icon(name: str, color: str = "#ffffff", size: int = 20) -> QIcon:
     painter.end()
 
     return QIcon(pixmap)
-
-
-def icon_names() -> list[str]:
-    """Return the list of available icon names."""
-    return list(_ICONS.keys())

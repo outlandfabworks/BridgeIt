@@ -265,7 +265,7 @@ def _insert_bridge_into_path(
     seg_idx = _find_nearest_segment(path, island_pt)
     insert_idx = (seg_idx + 1) % len(path)
 
-    bridge_pts = [a, d, target_pt, c, b]
+    bridge_pts = [a, d, c, b]
     path[insert_idx:insert_idx] = bridge_pts
 
 

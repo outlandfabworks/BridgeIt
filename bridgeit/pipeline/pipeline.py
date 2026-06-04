@@ -27,7 +27,7 @@ from bridgeit.config import (
 )
 from bridgeit.pipeline.analyze import AnalysisResult, analyze_islands
 from bridgeit.pipeline.bridge import BridgeResult, add_bridges
-from bridgeit.pipeline.export import export_svg, export_svg_string
+from bridgeit.pipeline.export import export_svg
 from bridgeit.pipeline.remove_bg import color_erase_removal, remove_background
 from bridgeit.pipeline.trace import Path2D, get_image_size, trace_contours
 
@@ -68,7 +68,6 @@ class PipelineResult:
     analysis: Optional[AnalysisResult] = None          # island classification
     bridge_result: Optional[BridgeResult] = None       # paths with bridges inserted
     svg_path: Optional[Path] = None                    # saved SVG file path
-    svg_string: Optional[str] = None                   # SVG as a string (for preview)
     elapsed_seconds: float = 0.0                       # total wall-clock time
     error: Optional[str] = None                        # error message if pipeline failed
 
@@ -161,10 +160,6 @@ class PipelineRunner:
                 dpi=self.settings.dpi,
             )
 
-            # Stage 5: Serialise paths to SVG format
-            self._progress(Stage.EXPORT, "Exporting SVG…")
-            result.svg_string = export_svg_string(result.bridge_result)
-
             # Optionally save the SVG to disk if the caller provided a path
             if output_svg:
                 result.svg_path = export_svg(result.bridge_result, output_svg)
@@ -215,10 +210,6 @@ class PipelineRunner:
                 bridge_width_mm=self.settings.bridge_width_mm,
                 dpi=self.settings.dpi,
             )
-
-            # Produce an SVG string for the canvas to display
-            self._progress(Stage.EXPORT, "Rendering SVG…")
-            result.svg_string = export_svg_string(result.bridge_result)
 
         except Exception as exc:
             result.error = str(exc)

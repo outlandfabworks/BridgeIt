@@ -252,7 +252,6 @@ class MainWindow(QMainWindow):
         # Settings waiting to be applied after the current pipeline run finishes
         self._pending_settings: Optional[PipelineSettings] = None
         self._preview_svg: Optional[str] = None
-        self._update_version: Optional[str] = None
 
         # ── Canvas edit state (synced to/from the canvas widget) ──────────
         self._excluded_paths: set = set()        # path indices hidden by the user
@@ -1888,7 +1887,6 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(str)
     def _on_update_available(self, version: str) -> None:
-        self._update_version = version
         self._btn_update.setText(f"⬆  v{version} available")
         self._btn_update.setToolTip(f"Version {version} is available — click to open the releases page")
         self._style_update_btn()
