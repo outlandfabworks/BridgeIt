@@ -1561,14 +1561,20 @@ class MainWindow(QMainWindow):
 
         if result.bridge_result:
             if not on_canvas:
-                # This is a fresh image load — clear any edits from the previous image
+                # Fresh image load — clear any edits from the previous image
                 self._excluded_paths = set()
                 self._manual_bridges = []
+            else:
+                # Settings re-run — clamp exclusion indices to the new path count
+                # so stale indices from a previous run don't silently mismatch
+                n_paths = len(result.paths or [])
+                self._excluded_paths = {i for i in self._excluded_paths if i < n_paths}
             # Load pre-bridge paths — no bridges auto-applied; user triggers via Auto Bridge
             self._preview.canvas.load(
                 result.paths,
                 excluded=self._excluded_paths,
                 manual_bridges=self._manual_bridges,
+                fit=not on_canvas,
             )
             # Enable toolbar buttons that require a loaded design
             self._btn_view_svg.setEnabled(True)

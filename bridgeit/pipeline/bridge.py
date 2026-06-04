@@ -346,14 +346,25 @@ def apply_manual_bridges(
 
 
 def _find_nearest_path(paths: List[Path2D], pt: Tuple[float, float]) -> Optional[int]:
-    """Return the index of the path whose nearest vertex is closest to pt."""
+    """Return the index of the path nearest to pt using segment projection."""
     best_dist = math.inf
     best_idx: Optional[int] = None
     px, py = pt
 
     for i, path in enumerate(paths):
-        for x, y in path:
-            d = math.hypot(x - px, y - py)
+        n = len(path)
+        for j in range(n):
+            ax, ay = path[j]
+            bx, by = path[(j + 1) % n]
+            dx, dy = bx - ax, by - ay
+            seg_len_sq = dx * dx + dy * dy
+            if seg_len_sq < 1e-12:
+                t = 0.0
+            else:
+                t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / seg_len_sq))
+            near_x = ax + t * dx
+            near_y = ay + t * dy
+            d = math.hypot(px - near_x, py - near_y)
             if d < best_dist:
                 best_dist = d
                 best_idx = i

@@ -599,6 +599,7 @@ class InteractiveCanvas(QGraphicsView):
         paths: List[Path2D],
         excluded: Optional[Set[int]] = None,
         manual_bridges: Optional[List[Tuple]] = None,
+        fit: bool = False,
     ) -> None:
         """Rebuild the canvas from a fresh pipeline result.
 
@@ -612,6 +613,8 @@ class InteractiveCanvas(QGraphicsView):
                             Both user-drawn and confirmed auto-suggested bridges
                             are stored here and applied via apply_manual_bridges()
                             at export time.
+            fit:            If True, reset zoom/pan to fit the scene. Pass True
+                            only on a fresh image load, not on settings re-runs.
         """
         # Wipe everything from the scene and clear all our tracking lists
         self._scene.clear()
@@ -646,9 +649,9 @@ class InteractiveCanvas(QGraphicsView):
             self._bridge_items.append(item)
 
         bbox = self._scene.itemsBoundingRect()
-        if bbox.isValid():
+        if bbox.isValid() and (fit or not self._fitted):
             self.fitInView(bbox, Qt.AspectRatioMode.KeepAspectRatio)
-        self._fitted = True
+            self._fitted = True
 
     def set_mode(self, mode: Mode) -> None:
         self._mode = mode
