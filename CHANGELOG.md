@@ -4,6 +4,12 @@ All notable changes to BridgeIt are listed here.
 
 ---
 
+## [1.5.6] - 2026-06-04
+### Changes
+- Fix bridge geometry and clean up dead code
+
+---
+
 ## [1.5.5] - 2026-05-26
 ### Changes
 - Fix image SVG export including white background
