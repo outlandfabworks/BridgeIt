@@ -4,6 +4,12 @@ All notable changes to BridgeIt are listed here.
 
 ---
 
+## [1.5.7] - 2026-06-04
+### Changes
+- Fix zoom reset, stale exclusions, and manual bridge path detection
+
+---
+
 ## [1.5.6] - 2026-06-04
 ### Changes
 - Fix bridge geometry and clean up dead code
