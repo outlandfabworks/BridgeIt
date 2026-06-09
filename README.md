@@ -25,6 +25,20 @@ BridgeIt takes a photo or graphic, removes the background, traces the outlines a
 
 Both the pre-built binary and the source install use the same one-command installer, which handles the app, taskbar icon, and `.desktop` launcher entry automatically.
 
+**System requirements:** The binary is built on Ubuntu 22.04 and requires glibc 2.35 or newer. Ubuntu 20.04+, Debian 11+, Fedora 36+, and Arch Linux all meet this requirement. Older distros (Ubuntu 18.04, CentOS 7) will not work.
+
+The following XCB libraries are required for the Qt6 GUI. On Ubuntu/Debian they are installed automatically by the installer. On Fedora or Arch you may need to install them manually if the app fails to launch:
+
+**Fedora:**
+```bash
+sudo dnf install xcb-util-cursor xcb-util-image xcb-util-keysyms xcb-util-renderutil libxkbcommon-x11
+```
+
+**Arch:**
+```bash
+sudo pacman -S xcb-util-cursor xcb-util-image xcb-util-keysyms xcb-util-renderutil libxkbcommon-x11
+```
+
 **From a release download** — extract the `.tar.gz`, then:
 ```bash
 cd BridgeIt-linux
