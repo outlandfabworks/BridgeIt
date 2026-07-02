@@ -4,6 +4,13 @@ All notable changes to BridgeIt are listed here.
 
 ---
 
+## [1.5.8] - 2026-07-02
+### Changes
+- Fix trace selection lasso keeping the wrong region
+- Add Linux system requirements and distro compatibility notes to README
+
+---
+
 ## [1.5.7] - 2026-06-04
 ### Changes
 - Fix zoom reset, stale exclusions, and manual bridge path detection
