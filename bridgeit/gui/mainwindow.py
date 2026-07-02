@@ -1472,7 +1472,7 @@ class MainWindow(QMainWindow):
             mask = _PILImg.new("L", src_rgb.size, 0)
             _IDraw.Draw(mask).polygon(self._lasso_points, fill=255)
             white_bg = _PILImg.new("RGB", src_rgb.size, (255, 255, 255))
-            source = _PILImg.composite(src_rgb, white_bg, mask)
+            source = _PILImg.composite(white_bg, src_rgb, mask)
             preview_only = False   # background must be re-run on the masked image
 
         if settings is None:
