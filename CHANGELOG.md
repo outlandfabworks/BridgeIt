@@ -4,6 +4,12 @@ All notable changes to BridgeIt are listed here.
 
 ---
 
+## [1.5.9] - 2026-07-02
+### Changes
+- Replace global colour erase with flood-fill erase
+
+---
+
 ## [1.5.8] - 2026-07-02
 ### Changes
 - Fix trace selection lasso keeping the wrong region
