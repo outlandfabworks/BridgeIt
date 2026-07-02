@@ -28,7 +28,7 @@ from bridgeit.config import (
 from bridgeit.pipeline.analyze import AnalysisResult, analyze_islands
 from bridgeit.pipeline.bridge import BridgeResult, add_bridges
 from bridgeit.pipeline.export import export_svg
-from bridgeit.pipeline.remove_bg import color_erase_removal, remove_background
+from bridgeit.pipeline.remove_bg import remove_background
 from bridgeit.pipeline.trace import Path2D, get_image_size, trace_contours
 
 
@@ -50,10 +50,10 @@ class PipelineSettings:
     contour_smoothing: float = DEFAULT_CONTOUR_SMOOTHING # path simplification amount
     min_contour_area: float = DEFAULT_MIN_CONTOUR_AREA   # noise filter threshold
     dpi: float = DEFAULT_DPI                              # resolution for mm↔px conversion
-    # Manual background erase colours picked by the user in the GUI.
-    # When non-empty, colour-range erasure replaces the auto bg-removal step.
-    erase_colors: list = field(default_factory=list)   # [(r, g, b), ...]
-    erase_tolerance: float = 50.0                       # Euclidean RGB tolerance
+    # Flood-fill erase seeds: (x, y) image-pixel coordinates clicked by the user.
+    # When non-empty, flood-fill erasure replaces the auto bg-removal step.
+    erase_seeds: list = field(default_factory=list)    # [(x, y), ...]
+    erase_tolerance: int = 30                           # per-channel flood-fill tolerance
 
 
 @dataclass
@@ -128,13 +128,21 @@ class PipelineRunner:
             # If the user has sampled erase colours in the GUI, use colour-range
             # erasure instead of the auto-detection / AI path.
             self._progress(Stage.REMOVE_BG, "Removing background…")
-            if self.settings.erase_colors:
-                from bridgeit.pipeline.remove_bg import _load_image, _cap_size
-                img = _cap_size(_load_image(source))
-                result.nobg_image = color_erase_removal(
-                    img,
-                    self.settings.erase_colors,
-                    self.settings.erase_tolerance,
+            if self.settings.erase_seeds:
+                from bridgeit.pipeline.remove_bg import (
+                    _load_image, _cap_size, flood_fill_erase_removal,
+                )
+                img_orig = _load_image(source)
+                orig_w, orig_h = img_orig.size
+                img = _cap_size(img_orig)
+                new_w, new_h = img.size
+                sx, sy = new_w / orig_w, new_h / orig_h
+                scaled_seeds = [
+                    (int(x * sx), int(y * sy))
+                    for x, y in self.settings.erase_seeds
+                ]
+                result.nobg_image = flood_fill_erase_removal(
+                    img, scaled_seeds, tolerance=self.settings.erase_tolerance,
                 )
             else:
                 result.nobg_image = remove_background(source)

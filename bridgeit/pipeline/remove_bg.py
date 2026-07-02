@@ -56,6 +56,49 @@ def remove_background(source: Union[str, Path, Image.Image]) -> Image.Image:
         return _rembg_removal(img)
 
 
+def flood_fill_erase_removal(
+    img: Image.Image,
+    seeds: List[Tuple[int, int]],
+    tolerance: int = 30,
+) -> Image.Image:
+    """Remove background by flood-filling from clicked seed points.
+
+    Unlike global colour erasure, this only removes the connected region
+    of similar colour reachable from each seed point.  Same-coloured shapes
+    elsewhere in the image (e.g. white text on a white background) are left
+    untouched because they are not spatially connected to the clicked area.
+
+    Args:
+        img:       Source image (any mode).
+        seeds:     List of (x, y) image-pixel coordinates to flood-fill from.
+        tolerance: Per-channel RGB tolerance for the fill spread (0-255).
+
+    Returns:
+        RGBA image with the filled regions made transparent.
+    """
+    import cv2
+    rgb = np.array(img.convert("RGB"), dtype=np.uint8)
+    h, w = rgb.shape[:2]
+    combined_mask = np.zeros((h, w), dtype=np.uint8)
+
+    tol = (tolerance, tolerance, tolerance)
+    flags = 4 | (255 << 8) | cv2.FLOODFILL_MASK_ONLY
+
+    for x, y in seeds:
+        x = int(max(0, min(x, w - 1)))
+        y = int(max(0, min(y, h - 1)))
+        ff_mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
+        cv2.floodFill(rgb.copy(), ff_mask, (x, y), 255, tol, tol, flags)
+        combined_mask = np.maximum(combined_mask, ff_mask[1:-1, 1:-1])
+
+    alpha = np.where(combined_mask > 0, np.uint8(0), np.uint8(255))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    alpha = cv2.morphologyEx(alpha, cv2.MORPH_CLOSE, kernel, iterations=2)
+
+    rgba = np.dstack([rgb, alpha])
+    return Image.fromarray(rgba, "RGBA")
+
+
 def color_erase_removal(
     img: Image.Image,
     colors: List[Tuple[int, int, int]],

@@ -137,7 +137,7 @@ class ImagePreview(QLabel):
     """Zoomable/pannable image preview."""
 
     # Emitted when the user clicks in erase mode — carries the sampled (R, G, B)
-    color_sampled = pyqtSignal(int, int, int)
+    color_sampled = pyqtSignal(int, int, int, int, int)  # x, y, r, g, b
 
     # Emitted when the user closes the lasso polygon.
     # Carries a list of (x, y) int tuples in original image pixel coordinates.
@@ -333,7 +333,7 @@ class ImagePreview(QLabel):
             if pt:
                 qimg = self._pixmap.toImage()
                 c = QColor(qimg.pixel(pt[0], pt[1]))
-                self.color_sampled.emit(c.red(), c.green(), c.blue())
+                self.color_sampled.emit(pt[0], pt[1], c.red(), c.green(), c.blue())
             return
         if event.button() == Qt.MouseButton.MiddleButton:
             self._drag_start = event.position()

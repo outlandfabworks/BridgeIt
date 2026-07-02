@@ -265,7 +265,7 @@ class MainWindow(QMainWindow):
         # Original PIL Image (pre-processing) — used for colour sampling in erase mode
         self._source_image: Optional[Image.Image] = None
         # Colours the user has sampled for erasure: [(r, g, b), ...]
-        self._erase_colors: list = []
+        self._erase_seeds: list = []
         # Lasso polygon points in source-image pixel coords: [(x,y), ...] or None
         self._lasso_points: Optional[list] = None
         # Index of the bridge currently being resized (-1 = none selected)
@@ -960,7 +960,7 @@ class MainWindow(QMainWindow):
         self._lasso_points = None
 
         # Clear erase colours — new image means fresh start
-        self._erase_colors = []
+        self._erase_seeds = []
 
         # Show the original file right away — don't wait for background removal
         try:
@@ -1479,7 +1479,7 @@ class MainWindow(QMainWindow):
             settings = self._controls.get_settings()
 
         # Inject erase colours managed by the main window (not in the controls panel)
-        settings.erase_colors = list(self._erase_colors)
+        settings.erase_seeds = list(self._erase_seeds)
 
         # Create a fresh PipelineRunner with the current settings.
         # on_progress only fires for preview-only (fast) re-runs; full pipeline
@@ -1493,8 +1493,8 @@ class MainWindow(QMainWindow):
 
         if not preview_only:
             # Warn the user if rembg will need to download its AI model (~170 MB).
-            # This only applies when erase_colors is empty (auto bg removal path).
-            if not settings.erase_colors:
+            # This only applies when erase_seeds is empty (auto bg removal path).
+            if not settings.erase_seeds:
                 from bridgeit.pipeline.remove_bg import rembg_model_downloaded
                 if not rembg_model_downloaded():
                     self._set_status(
@@ -1709,30 +1709,30 @@ class MainWindow(QMainWindow):
             if self._source_image is not None:
                 self._preview.show_image_from_pil(self._source_image)
             self._preview.img_preview.set_erase_mode(True)
-            n = len(self._erase_colors)
+            n = len(self._erase_seeds)
             tip = (
-                "Erase mode — click background areas to sample colours.  "
-                f"({n} colour{'s' if n != 1 else ''} sampled)  "
-                "Click this button again to finish; right-click to clear all colours."
+                "Erase mode — click background areas to remove them.  "
+                f"({n} area{'s' if n != 1 else ''} selected)  "
+                "Click this button again to finish; right-click to clear all."
             )
             self._btn_erase.setToolTip(tip)
             if n:
                 self._set_status(
-                    f"Erase mode: {n} colour{'s' if n != 1 else ''} active — click more areas to add"
+                    f"Erase mode: {n} area{'s' if n != 1 else ''} active — click more areas to add"
                 )
             else:
                 self._set_status("Erase mode: click on background areas to remove them")
         else:
-            # Exiting sampling UI — keep the erase colours, just stop sampling
+            # Exiting erase mode UI — keep the seeds, just stop click-sampling
             self._preview.img_preview.set_erase_mode(False)
-            n = len(self._erase_colors)
+            n = len(self._erase_seeds)
             if n:
                 self._btn_erase.setToolTip(
-                    f"Erase Background — {n} colour{'s' if n != 1 else ''} active  "
+                    f"Erase Background — {n} area{'s' if n != 1 else ''} active  "
                     "(click to add more · right-click to clear)"
                 )
                 self._set_status(
-                    f"Erase: {n} colour{'s' if n != 1 else ''} active — "
+                    f"Erase: {n} area{'s' if n != 1 else ''} active — "
                     "right-click the button to clear"
                 )
             else:
@@ -1752,20 +1752,20 @@ class MainWindow(QMainWindow):
             f"QMenu::item:selected {{ background: {t['accent']}; color: #fff; }}"
         )
         clear_act = menu.addAction("Clear erase colours")
-        clear_act.setEnabled(bool(self._erase_colors))
+        clear_act.setEnabled(bool(self._erase_seeds))
         chosen = menu.exec(self._btn_erase.mapToGlobal(pos))
         if chosen == clear_act:
             self._on_erase_clear()
 
     def _on_erase_clear(self) -> None:
-        """Clear all sampled erase colours and revert to automatic background removal."""
-        if not self._erase_colors:
+        """Clear all erase seeds and revert to automatic background removal."""
+        if not self._erase_seeds:
             return
-        self._erase_colors = []
+        self._erase_seeds = []
         self._btn_erase.setChecked(False)
         self._preview.img_preview.set_erase_mode(False)
         self._btn_erase.setToolTip("Erase Background  — click to enter erase mode")
-        self._set_status("Erase colours cleared — reverting to auto background removal")
+        self._set_status("Erase cleared — reverting to auto background removal")
         if self._nobg_image is not None:
             self._preview.show_image_from_pil(self._nobg_image)
         src = self._source_image
@@ -1817,26 +1817,24 @@ class MainWindow(QMainWindow):
             self._run_pipeline(source=self._source_image, preview_only=False)
 
     @pyqtSlot(int, int, int)
-    def _on_color_sampled(self, r: int, g: int, b: int) -> None:
+    def _on_color_sampled(self, x: int, y: int, r: int, g: int, b: int) -> None:
         """Called when the user clicks on the image in erase mode.
 
-        Adds the sampled colour to the erase list and kicks off a pipeline
-        re-run with colour-range erasure applied.
+        Adds the clicked image coordinate as a flood-fill seed and re-runs
+        the pipeline.  Only the connected region reachable from this point
+        is removed, preserving same-coloured areas elsewhere in the image.
         """
-        color = (r, g, b)
-        # Avoid duplicates (within ±5 per channel)
-        for cr, cg, cb in self._erase_colors:
-            if abs(cr - r) < 5 and abs(cg - g) < 5 and abs(cb - b) < 5:
+        # Skip if a seed very close to this point was already added
+        for sx, sy in self._erase_seeds:
+            if abs(sx - x) < 10 and abs(sy - y) < 10:
                 return
-        self._erase_colors.append(color)
-        n = len(self._erase_colors)
+        self._erase_seeds.append((x, y))
+        n = len(self._erase_seeds)
         self._btn_erase.setToolTip(
-            f"Erase mode ON — {n} colour{'s' if n != 1 else ''} sampled.  "
+            f"Erase mode ON — {n} area{'s' if n != 1 else ''} selected.  "
             "Click more areas or click button to clear and exit."
         )
-        self._set_status(f"Erase: sampled #{r:02x}{g:02x}{b:02x} — re-running pipeline…")
-        # Re-run pipeline with the updated erase colours — pass the already-loaded
-        # PIL image directly so the background thread never touches the file on disk
+        self._set_status(f"Erase: {n} area{'s' if n != 1 else ''} selected — re-running pipeline…")
         if self._source_image is not None:
             self._run_pipeline(source=self._source_image, preview_only=False)
 
