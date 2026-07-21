@@ -4,6 +4,13 @@ All notable changes to BridgeIt are listed here.
 
 ---
 
+## [1.6.0] - 2026-07-21
+### Changes
+- v1.6.0 — code audit fixes
+- Add disclaimer section to website
+
+---
+
 ## [1.5.9] - 2026-07-02
 ### Changes
 - Replace global colour erase with flood-fill erase
