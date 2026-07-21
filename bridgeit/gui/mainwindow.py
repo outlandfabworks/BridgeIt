@@ -982,6 +982,17 @@ class MainWindow(QMainWindow):
             _LOG.exception("Failed to open image: %s", path)
             self._source_image = None
             self._set_status(f"Could not open image: {exc}", error=True)
+            if self._last_result and self._last_result.bridge_result:
+                self._btn_export.setEnabled(True)
+                self._btn_export_image.setEnabled(True)
+                self._btn_export_dxf.setEnabled(True)
+                self._btn_view_svg.setEnabled(True)
+                self._btn_delete.setEnabled(True)
+                self._btn_add_bridge.setEnabled(True)
+                self._btn_auto_bridge.setEnabled(True)
+                self._btn_erase.setEnabled(self._nobg_image is not None)
+                self._btn_crop.setEnabled(True)
+                self._controls.set_controls_enabled(True)
             return
         self._run_pipeline(source=path, preview_only=False)
 
@@ -1041,10 +1052,10 @@ class MainWindow(QMainWindow):
         if not self._last_result or not self._last_result.bridge_result:
             return
 
-        # Suggest a filename based on the source image name
+        # Suggest a filename based on the source image name, defaulting to its directory
         default_name = "output.svg"
         if self._last_result.source_path:
-            default_name = self._last_result.source_path.with_suffix(".svg").name
+            default_name = str(self._last_result.source_path.with_suffix(".svg"))
 
         path, _ = QFileDialog.getSaveFileName(
             self,
@@ -1095,7 +1106,7 @@ class MainWindow(QMainWindow):
 
         default_name = "output.dxf"
         if self._last_result.source_path:
-            default_name = self._last_result.source_path.with_suffix(".dxf").name
+            default_name = str(self._last_result.source_path.with_suffix(".dxf"))
 
         path, _ = QFileDialog.getSaveFileName(
             self,
@@ -1151,7 +1162,7 @@ class MainWindow(QMainWindow):
 
         default_name = "image.svg"
         if self._last_result and self._last_result.source_path:
-            default_name = self._last_result.source_path.with_suffix(".svg").name
+            default_name = str(self._last_result.source_path.with_suffix(".svg"))
 
         path, _ = QFileDialog.getSaveFileName(
             self,
@@ -1544,10 +1555,28 @@ class MainWindow(QMainWindow):
         we don't switch them back to the image view — that would be annoying.
         """
         self._set_busy(False)
+        prev_had_bridge = (
+            self._last_result is not None
+            and self._last_result.bridge_result is not None
+        )
         self._last_result = result
 
         if result.error:
             self._show_pipeline_error(result.error)
+            have_nobg = self._nobg_image is not None
+            self._btn_erase.setEnabled(have_nobg)
+            self._btn_crop.setEnabled(self._source_image is not None)
+            if prev_had_bridge:
+                self._btn_export.setEnabled(True)
+                self._btn_export_image.setEnabled(True)
+                self._btn_export_dxf.setEnabled(True)
+                self._btn_view_svg.setEnabled(True)
+                self._btn_delete.setEnabled(True)
+                self._btn_add_bridge.setEnabled(True)
+                self._btn_auto_bridge.setEnabled(True)
+                self._controls.set_controls_enabled(True)
+            elif have_nobg:
+                self._controls.set_controls_enabled(True)
             return
 
         # Cache the background-removed image so future preview re-runs don't
@@ -1816,7 +1845,7 @@ class MainWindow(QMainWindow):
         if self._source_image is not None:
             self._run_pipeline(source=self._source_image, preview_only=False)
 
-    @pyqtSlot(int, int, int)
+    @pyqtSlot(int, int, int, int, int)
     def _on_color_sampled(self, x: int, y: int, r: int, g: int, b: int) -> None:
         """Called when the user clicks on the image in erase mode.
 

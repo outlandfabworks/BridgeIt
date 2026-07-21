@@ -11,8 +11,6 @@ DXF mode:
 
 from __future__ import annotations
 
-import os
-import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -78,17 +76,6 @@ def export_svg(
     # pretty=True adds newlines/indentation for human-readable SVG
     dwg.save(pretty=True)
     return out
-
-
-def export_svg_string(result: BridgeResult) -> str:
-    """Legacy helper — returns fabrication SVG as a string."""
-    # This is a convenience wrapper used by the pipeline for in-memory SVG handling.
-    # It writes to a temp file then reads it back, the same pattern as make_preview_svg.
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_path = os.path.join(tmp_dir, "export.svg")
-        export_svg(result, tmp_path)
-        with open(tmp_path, "r", encoding="utf-8") as f:
-            return f.read()
 
 
 def export_dxf(

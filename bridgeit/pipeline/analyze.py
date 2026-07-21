@@ -160,7 +160,7 @@ def _is_island(poly: Polygon, all_polygons: List[Polygon], own_idx: int) -> bool
         # If this polygon is within, touches, or overlaps a larger one, it is
         # part of the larger design (e.g. a hole or an adjacent shape), not
         # a freestanding island.
-        if other.contains(poly) or other.touches(poly) or other.intersects(poly):
+        if other.intersects(poly):
             return False
 
     # No larger shape contains or touches this polygon → it's a floating island

@@ -88,7 +88,7 @@ def flood_fill_erase_removal(
         x = int(max(0, min(x, w - 1)))
         y = int(max(0, min(y, h - 1)))
         ff_mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
-        cv2.floodFill(rgb.copy(), ff_mask, (x, y), 255, tol, tol, flags)
+        cv2.floodFill(rgb, ff_mask, (x, y), 255, tol, tol, flags)
         combined_mask = np.maximum(combined_mask, ff_mask[1:-1, 1:-1])
 
     alpha = np.where(combined_mask > 0, np.uint8(0), np.uint8(255))
@@ -269,9 +269,8 @@ def rembg_model_downloaded() -> bool:
     before starting the pipeline so it can warn the user if a long download
     is about to happen.
     """
-    import os
-    model_path = os.path.expanduser("~/.u2net/u2net.onnx")
-    return os.path.exists(model_path)
+    u2net_dir = Path.home() / ".u2net"
+    return u2net_dir.is_dir() and any(u2net_dir.glob("*.onnx"))
 
 
 # ---------------------------------------------------------------------------
@@ -322,7 +321,9 @@ def _load_image(source: Union[str, Path, Image.Image]) -> Image.Image:
     if path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}:
         raise ValueError(f"Unsupported image format: {path.suffix}")
 
-    return Image.open(path)
+    img = Image.open(path)
+    img.load()
+    return img
 
 
 def _image_to_bytes(img: Image.Image) -> bytes:

@@ -25,6 +25,7 @@ Mouse hover over the canvas gives it keyboard focus automatically.
 from __future__ import annotations
 
 import math
+from collections import deque
 from enum import Enum, auto
 from typing import List, Optional, Set, Tuple, Union
 
@@ -498,9 +499,10 @@ class InteractiveCanvas(QGraphicsView):
 
         # ── Undo / redo stacks ────────────────────────────────────────────
         # Each entry is a snapshot: (excluded, manual_bridges)
-        self._undo_stack: List[Tuple] = []
-        self._redo_stack: List[Tuple] = []
+        # deque(maxlen=N) automatically discards the oldest entry when full — O(1) both ends.
         self._UNDO_LIMIT = 50
+        self._undo_stack: deque = deque(maxlen=self._UNDO_LIMIT)
+        self._redo_stack: deque = deque(maxlen=self._UNDO_LIMIT)
 
         # ── Active first-point placement ──────────────────────────────────
         # When the user clicks in bridge mode, _bridge_pt1 holds the first endpoint
@@ -581,8 +583,6 @@ class InteractiveCanvas(QGraphicsView):
     def _push_undo(self) -> None:
         """Save current state before a destructive operation; clear redo stack."""
         self._undo_stack.append(self._snapshot())
-        if len(self._undo_stack) > self._UNDO_LIMIT:
-            self._undo_stack.pop(0)
         self._redo_stack.clear()
 
     def update_theme(self) -> None:
@@ -848,9 +848,11 @@ class InteractiveCanvas(QGraphicsView):
                 Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier
             ))
             if not multi:
-                if not hit.selected:
-                    self.clear_selection()   # deselect everything else first
-            hit.toggle()   # flip the clicked item's selection state
+                # Plain click: exactly this item selected, nothing else
+                self.clear_selection()
+                hit.set_sel(True)
+            else:
+                hit.toggle()
             self.selection_changed.emit()
         else:
             # Clicked empty space — deselect all (unless modifier held) and start rubber-band
@@ -1140,6 +1142,9 @@ class InteractiveCanvas(QGraphicsView):
         """
         indices = [b.bridge_index for b in self._bridge_items
                    if isinstance(b, _ConfirmedBridgeItem) and b.selected]
+        if not indices:
+            return
+        self._push_undo()
         for idx in indices:
             self.update_bridge_width(idx, width_px)
 
