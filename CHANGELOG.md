@@ -4,6 +4,12 @@ All notable changes to BridgeIt are listed here.
 
 ---
 
+## [1.6.1] - 2026-07-24
+### Changes
+- v1.6.1 — island highlighting, erase tolerance control, zoom indicator
+
+---
+
 ## [1.6.0] - 2026-07-21
 ### Changes
 - v1.6.0 — code audit fixes
