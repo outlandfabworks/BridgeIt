@@ -1394,10 +1394,13 @@ class MainWindow(QMainWindow):
 
         # Reload the canvas — redraws all items from the pre-bridge paths,
         # with confirmed bridges applied at export time via apply_manual_bridges
+        island_indices = {island.index for island in self._last_result.analysis.islands} \
+            if self._last_result.analysis else set()
         canvas.load(
             self._last_result.paths,
             excluded=self._excluded_paths,
             manual_bridges=self._manual_bridges,
+            island_indices=island_indices,
         )
 
         # Update info card to reflect confirmed bridge count
@@ -1599,11 +1602,14 @@ class MainWindow(QMainWindow):
                 n_paths = len(result.paths or [])
                 self._excluded_paths = {i for i in self._excluded_paths if i < n_paths}
             # Load pre-bridge paths — no bridges auto-applied; user triggers via Auto Bridge
+            island_indices = {island.index for island in result.analysis.islands} \
+                if result.analysis else set()
             self._preview.canvas.load(
                 result.paths,
                 excluded=self._excluded_paths,
                 manual_bridges=self._manual_bridges,
                 fit=not on_canvas,
+                island_indices=island_indices,
             )
             # Enable toolbar buttons that require a loaded design
             self._btn_view_svg.setEnabled(True)

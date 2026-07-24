@@ -140,7 +140,31 @@ class ControlsPanel(QWidget):
 
         inner.addWidget(conv_card)
 
-        # ── Card 2: Analysis Info ─────────────────────────────────────────
+        # ── Card 2: Erase Settings ────────────────────────────────────────
+        erase_card, erase_inner = self._make_card("ERASE SETTINGS")
+        self._erase_card = erase_card
+
+        self._erase_tol_spin, erase_tol_row = self._labeled_int_spin(
+            label="Erase Tolerance",
+            unit="",
+            value=30,
+            minimum=5,
+            maximum=80,
+            step=5,
+            tooltip=(
+                "Flood-fill tolerance for the Erase tool.\n"
+                "Higher = removes larger areas of similar colour.\n"
+                "Lower = more precise, fine selection."
+            ),
+        )
+        erase_inner.addLayout(erase_tol_row)
+        self._erase_tol_slider = self._make_slider(5, 80, 30)
+        self._erase_tol_slider.setSingleStep(5)
+        self._erase_tol_slider.setPageStep(10)
+        erase_inner.addWidget(self._erase_tol_slider)
+
+        inner.addWidget(erase_card)
+
         info_card, info_inner = self._make_card("ANALYSIS INFO")
         self._info_card = info_card   # kept for apply_theme()
 
@@ -182,14 +206,16 @@ class ControlsPanel(QWidget):
             bridge_width_mm=self._bridge_spin.value(),
             contour_smoothing=self._smooth_spin.value(),
             min_contour_area=float(self._area_spin.value()),
+            erase_tolerance=self._erase_tol_spin.value(),
         )
 
     def set_controls_enabled(self, enabled: bool) -> None:
         """Enable or disable all user-adjustable input controls."""
         for w in (
-            self._bridge_spin, self._bridge_slider,
-            self._smooth_spin, self._smooth_slider,
-            self._area_spin,   self._area_slider,
+            self._bridge_spin,    self._bridge_slider,
+            self._smooth_spin,    self._smooth_slider,
+            self._area_spin,      self._area_slider,
+            self._erase_tol_spin, self._erase_tol_slider,
         ):
             w.setEnabled(enabled)
 
@@ -244,7 +270,7 @@ class ControlsPanel(QWidget):
             f"border: 1px solid {t['border_faint']}; border-radius: 10px; }}"
         )
         sep_style = f"background: {t['border_faint']}; border: none;"
-        for card in [self._conv_card, self._info_card]:
+        for card in [self._conv_card, self._erase_card, self._info_card]:
             if card:
                 card.setStyleSheet(card_style)
                 # Update the thin separator line stored on the card widget
@@ -286,12 +312,17 @@ class ControlsPanel(QWidget):
         self._area_spin.valueChanged.connect(self._area_slider.setValue)
         self._area_slider.valueChanged.connect(self._area_spin.setValue)
 
+        # Erase tolerance: integer values, no scaling needed
+        self._erase_tol_spin.valueChanged.connect(self._erase_tol_slider.setValue)
+        self._erase_tol_slider.valueChanged.connect(self._erase_tol_spin.setValue)
+
         # Emit a settings_changed signal whenever any of the spinboxes change.
         # We use spinboxes (not sliders) here to avoid double-firing when both
         # the spinbox and slider update in response to a single user action.
         self._bridge_spin.valueChanged.connect(self._emit_settings)
         self._smooth_spin.valueChanged.connect(self._emit_settings)
         self._area_spin.valueChanged.connect(self._emit_settings)
+        self._erase_tol_spin.valueChanged.connect(self._emit_settings)
 
     def _emit_settings(self) -> None:
         # Gather the current settings and broadcast them to any connected listeners

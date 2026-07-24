@@ -36,7 +36,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QGraphicsEllipseItem, QGraphicsItem, QGraphicsPathItem,
-    QGraphicsScene, QGraphicsView, QRubberBand,
+    QGraphicsScene, QGraphicsView, QLabel, QRubberBand,
 )
 
 from bridgeit.gui.themes import current_theme
@@ -55,6 +55,7 @@ class Mode(Enum):
 # These QColor objects define what colour each type of item appears on screen.
 # Having them as module-level constants means we change the colour in one place.
 _COL_NORMAL      = QColor("#ffffff")   # white  — unselected path
+_COL_ISLAND      = QColor("#f97316")   # orange — floating island (needs bridge)
 _COL_PATH_SEL    = QColor("#f59e0b")   # amber  — selected path
 _COL_HOVER       = QColor("#a78bfa")   # purple — hovered path/bridge
 _COL_BRIDGE      = QColor("#22c55e")   # green  — auto bridge marker
@@ -156,7 +157,7 @@ class _PathItem(QGraphicsPathItem):
     can find the closest point on any edge during bridge placement.
     """
 
-    def __init__(self, path_2d: Path2D, index: int) -> None:
+    def __init__(self, path_2d: Path2D, index: int, is_island: bool = False) -> None:
         self._path_2d = path_2d   # raw points — used by _snap_to_path()
 
         # Convert our list of (x, y) tuples into a Qt painter path
@@ -170,6 +171,7 @@ class _PathItem(QGraphicsPathItem):
         super().__init__(qpath)
         self.path_index = index   # original index in the pipeline path list
         self._sel = False         # selection state
+        self._is_island = is_island
         self.setAcceptHoverEvents(True)   # needed for hover highlight to work
         # Nearly-transparent fill so the path has a clickable interior area
         self.setBrush(QBrush(QColor(255, 255, 255, 1)))
@@ -177,7 +179,12 @@ class _PathItem(QGraphicsPathItem):
 
     def _refresh_pen(self) -> None:
         """Update the stroke colour and width to match current selection state."""
-        c = _COL_PATH_SEL if self._sel else _COL_NORMAL
+        if self._sel:
+            c = _COL_PATH_SEL
+        elif self._is_island:
+            c = _COL_ISLAND
+        else:
+            c = _COL_NORMAL
         self.setPen(QPen(c, _W_SELECTED if self._sel else _W_NORMAL))
 
     def toggle(self) -> bool:
@@ -485,6 +492,7 @@ class InteractiveCanvas(QGraphicsView):
         # ── Path state ────────────────────────────────────────────────────
         self._items: List[_PathItem] = []      # all visible path items on canvas
         self._excluded: Set[int] = set()       # path indices the user has deleted
+        self._island_indices: Set[int] = set() # path indices that are floating islands
 
         # ── Bridge state ──────────────────────────────────────────────────
         # All confirmed bridge items (both auto-generated and manual).
@@ -532,6 +540,16 @@ class InteractiveCanvas(QGraphicsView):
         # We fit once on first load, then let the user zoom freely.
         self._fitted = False
 
+        # ── Zoom percentage indicator ─────────────────────────────────────
+        # Floats over the bottom-right corner; transparent to mouse events.
+        self._zoom_label = QLabel("", self.viewport())
+        self._zoom_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._zoom_label.setStyleSheet(
+            "color: rgba(255,255,255,90); font-size: 10px;"
+            "background: transparent; padding: 1px 4px; border: none;"
+        )
+        self._zoom_label.hide()
+
     # ── Public API ────────────────────────────────────────────────────────
 
     @property
@@ -551,6 +569,20 @@ class InteractiveCanvas(QGraphicsView):
         bbox = self._scene.itemsBoundingRect()
         if bbox.isValid():
             self.fitInView(bbox, Qt.AspectRatioMode.KeepAspectRatio)
+            self._update_zoom_label()
+
+    def _update_zoom_label(self) -> None:
+        """Reposition the zoom % overlay after any zoom or resize."""
+        pct = self.transform().m11() * 100
+        self._zoom_label.setText(f"{pct:.0f}%")
+        self._zoom_label.adjustSize()
+        vp = self.viewport()
+        self._zoom_label.move(
+            vp.width()  - self._zoom_label.width()  - 6,
+            vp.height() - self._zoom_label.height() - 6,
+        )
+        self._zoom_label.show()
+        self._zoom_label.raise_()
 
     def undo(self) -> None:
         """Undo the last delete or bridge-confirm action."""
@@ -600,6 +632,7 @@ class InteractiveCanvas(QGraphicsView):
         excluded: Optional[Set[int]] = None,
         manual_bridges: Optional[List[Tuple]] = None,
         fit: bool = False,
+        island_indices: Optional[Set[int]] = None,
     ) -> None:
         """Rebuild the canvas from a fresh pipeline result.
 
@@ -633,11 +666,13 @@ class InteractiveCanvas(QGraphicsView):
             self._excluded = set(excluded)
         if manual_bridges is not None:
             self._manual_bridges = list(manual_bridges)
+        if island_indices is not None:
+            self._island_indices = set(island_indices)
 
         for i, path in enumerate(paths):
             if i in self._excluded or len(path) < 2:
                 continue
-            item = _PathItem(path, i)
+            item = _PathItem(path, i, is_island=(i in self._island_indices))
             self._scene.addItem(item)
             self._items.append(item)
 
@@ -652,6 +687,7 @@ class InteractiveCanvas(QGraphicsView):
         if bbox.isValid() and (fit or not self._fitted):
             self.fitInView(bbox, Qt.AspectRatioMode.KeepAspectRatio)
             self._fitted = True
+            self._update_zoom_label()
 
     def set_mode(self, mode: Mode) -> None:
         self._mode = mode
@@ -927,6 +963,7 @@ class InteractiveCanvas(QGraphicsView):
     def wheelEvent(self, event) -> None:
         factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
         self.scale(factor, factor)
+        self._update_zoom_label()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         """Handle keyboard shortcuts for delete, confirm, and escape."""
@@ -961,6 +998,8 @@ class InteractiveCanvas(QGraphicsView):
             bbox = self._scene.itemsBoundingRect()
             if bbox.isValid():
                 self.fitInView(bbox, Qt.AspectRatioMode.KeepAspectRatio)
+        if self._zoom_label.isVisible():
+            self._update_zoom_label()
 
     # ── Bridge drawing ────────────────────────────────────────────────────
 
