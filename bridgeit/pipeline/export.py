@@ -288,6 +288,45 @@ def export_image_svg(
     return out
 
 
+def _apply_kerf(paths: list, kerf_mm: float, dpi: float) -> list:
+    """Inset each path by half the kerf width to compensate for laser beam diameter.
+
+    Args:
+        paths:   List of (x, y) point paths (already smoothed and bridged).
+        kerf_mm: Full kerf width in mm — paths are inset by kerf_mm / 2.
+        dpi:     Resolution used for mm→px conversion.
+
+    Returns:
+        New list with inset paths. Paths too small to survive the inset are dropped.
+    """
+    if kerf_mm <= 0:
+        return paths
+
+    from shapely.geometry import Polygon, MultiPolygon
+
+    inset_px = (kerf_mm / 2.0) * dpi / 25.4
+    result = []
+    for path in paths:
+        if len(path) < 3:
+            result.append(path)
+            continue
+        try:
+            poly = Polygon(path)
+            if not poly.is_valid:
+                poly = poly.buffer(0)
+            shrunk = poly.buffer(-inset_px)
+            if shrunk.is_empty:
+                continue
+            if isinstance(shrunk, MultiPolygon):
+                for sub in shrunk.geoms:
+                    result.append(list(sub.exterior.coords))
+            else:
+                result.append(list(shrunk.exterior.coords))
+        except Exception:
+            result.append(path)
+    return result
+
+
 def _smooth_pts(path: Path2D, iterations: int = 4) -> list:
     """Return smoothed (x, y) points using arc-length resampling + Chaikin.
 
