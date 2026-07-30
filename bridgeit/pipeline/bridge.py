@@ -149,6 +149,7 @@ def _bridge_island(
     best_target_idx: Optional[int] = None
 
     # ── Pass 1: find the innermost path that contains this island ─────────
+    island_area = island.polygon.area
     containing: List[Tuple[float, int]] = []   # (area, path_index)
     for i, path in enumerate(paths):
         if i == island.index or len(path) < 3:
@@ -157,6 +158,13 @@ def _bridge_island(
             poly = Polygon(path)
             if not poly.is_valid:
                 poly = poly.buffer(0)
+            # Only a larger path can be a genuine container — a path with
+            # smaller area than the island cannot enclose it.  Without this
+            # filter, concentric shapes (nested rings, counters inside a
+            # large letter) pick tiny inner paths as targets, producing
+            # zero-length or cross-cutting bridges.
+            if poly.area <= island_area:
+                continue
             if poly.contains(centroid):
                 containing.append((poly.area, i))
         except Exception as _e:

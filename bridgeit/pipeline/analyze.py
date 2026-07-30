@@ -146,24 +146,34 @@ def _path_to_polygon(path: Path2D) -> Polygon:
 
 
 def _is_island(poly: Polygon, all_polygons: List[Polygon], own_idx: int) -> bool:
-    """Return True if this polygon is not spatially connected to any larger polygon."""
+    """Return True if this polygon is a floating island relative to every larger polygon.
+
+    Two cases make a polygon mainland (return False):
+      - Its boundary shares points with a larger polygon's boundary → the shapes
+        are adjacent pieces of the same design (touching edges, overlapping outlines).
+
+    Two cases keep it as an island (return True):
+      - It is completely enclosed inside a larger polygon with no boundary contact
+        (e.g. a counter inside a letter, a hole inside a frame) → it will fall out
+        when cut and needs a bridge.
+      - It is completely separate from all larger polygons → also needs a bridge.
+
+    Using intersects() was wrong: it returns True even when one polygon is fully
+    INSIDE another (their interiors share space), causing holes to be misclassified
+    as mainland. The fix is to test boundary contact only.
+    """
     for i, other in enumerate(all_polygons):
-        # Skip self-comparison
         if i == own_idx:
             continue
-
-        # We only compare against shapes that are larger than this one.
-        # A smaller shape can't "contain" this polygon.
         if other.area <= poly.area:
             continue
 
-        # If this polygon is within, touches, or overlaps a larger one, it is
-        # part of the larger design (e.g. a hole or an adjacent shape), not
-        # a freestanding island.
-        if other.intersects(poly):
+        # Shapes are "connected" only if their outlines actually share points.
+        # A polygon completely enclosed inside another has no boundary contact —
+        # it's an island (falls out when cut), not a connected mainland piece.
+        if not other.contains(poly) and other.exterior.intersects(poly.exterior):
             return False
 
-    # No larger shape contains or touches this polygon → it's a floating island
     return True
 
 
