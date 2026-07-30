@@ -4,6 +4,12 @@ All notable changes to BridgeIt are listed here.
 
 ---
 
+## [1.6.3] - 2026-07-30
+### Changes
+- v1.6.3: kerf compensation, DPI auto-detect, Export Settings card
+
+---
+
 ## [1.6.2] - 2026-07-30
 ### Changes
 - v1.6.2: multi-bridge for elongated islands, compactness noise filter
