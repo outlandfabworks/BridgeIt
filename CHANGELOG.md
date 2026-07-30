@@ -4,6 +4,13 @@ All notable changes to BridgeIt are listed here.
 
 ---
 
+## [1.6.2] - 2026-07-30
+### Changes
+- v1.6.2: multi-bridge for elongated islands, compactness noise filter
+- Fix island detection and bridge target selection for enclosed shapes
+
+---
+
 ## [1.6.1] - 2026-07-24
 ### Changes
 - v1.6.1 — island highlighting, erase tolerance control, zoom indicator
