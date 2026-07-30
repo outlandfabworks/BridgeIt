@@ -11,6 +11,7 @@ usable as a laser-cutter cut path.
 
 from __future__ import annotations
 
+import math
 from typing import List, Tuple
 
 import cv2
@@ -115,6 +116,17 @@ def _find_contours(binary: np.ndarray, min_area: float) -> List[np.ndarray]:
     # Discard any contour smaller than min_area — these are noise, dust, or
     # JPEG compression artefacts, not real design elements.
     filtered = [c for c in contours if cv2.contourArea(c) >= min_area]
+
+    # Compactness filter: 4π·area/perimeter² equals 1.0 for a perfect circle and
+    # approaches 0 for extremely jagged or hair-thin shapes.  Contours below 0.02
+    # are almost always edge halos or rembg fringe artifacts — reject them.
+    compact = []
+    for c in filtered:
+        area = cv2.contourArea(c)
+        peri = cv2.arcLength(c, True)
+        if peri > 0 and (4 * math.pi * area / (peri * peri)) >= 0.02:
+            compact.append(c)
+    filtered = compact
 
     # Sort largest → smallest so the primary (outer) shape comes first in the list.
     # This matters for the island-detection stage that follows.

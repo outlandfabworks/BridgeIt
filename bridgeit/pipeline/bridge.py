@@ -79,6 +79,128 @@ def px_to_mm(px: float, dpi: float = DEFAULT_DPI) -> float:
     return px * 25.4 / dpi
 
 
+# Minimum span (px) from first bridge to island's far end to trigger a second bridge.
+# At 96 DPI, 100 px ≈ 26 mm — about the width of a thumb, a reasonable threshold for
+# "this island is long enough that one bridge leaves the far end loose."
+_MIN_SECOND_BRIDGE_PX = 100.0
+
+
+def _farthest_path_point(
+    path: Path2D, from_pt: Tuple[float, float]
+) -> Optional[Tuple[float, float]]:
+    """Return the vertex on path that is farthest from from_pt."""
+    if not path:
+        return None
+    fx, fy = from_pt
+    best_d = -1.0
+    best_pt: Optional[Tuple[float, float]] = None
+    for pt in path:
+        d = math.hypot(pt[0] - fx, pt[1] - fy)
+        if d > best_d:
+            best_d = d
+            best_pt = pt
+    return best_pt
+
+
+def _find_best_target(
+    anchor: Point,
+    island: Island,
+    paths: List[Path2D],
+) -> Optional[Tuple[Tuple[float, float], Tuple[float, float], int]]:
+    """Find the best bridge target for the given anchor point on the island.
+
+    Strategy — prefer containment over proximity (same as before, factored out
+    so the second-bridge search can reuse it with a different anchor):
+
+      1. Find every path whose polygon contains the island centroid.  Bridge to
+         the smallest such parent — most immediate enclosing boundary.
+      2. Fall back to nearest-path search if no containing path exists.
+
+    Args:
+        anchor: The Shapely Point used to guide nearest-point queries on targets.
+                First bridge uses the island centroid; second bridge uses the
+                far-end vertex.
+        island: The Island being bridged.
+        paths:  All current paths (mutable copies from add_bridges).
+
+    Returns:
+        (island_pt, target_pt, target_idx) or None if no target found.
+    """
+    import warnings
+
+    island_line = LineString(island.path)
+    centroid = island.polygon.centroid
+    island_area = island.polygon.area
+
+    best_island_pt: Optional[Tuple[float, float]] = None
+    best_target_pt: Optional[Tuple[float, float]] = None
+    best_target_idx: Optional[int] = None
+
+    # ── Pass 1: find the innermost path that contains this island ─────────
+    containing: List[Tuple[float, int]] = []
+    for i, path in enumerate(paths):
+        if i == island.index or len(path) < 3:
+            continue
+        try:
+            poly = Polygon(path)
+            if not poly.is_valid:
+                poly = poly.buffer(0)
+            # Only a larger path can be a genuine container.
+            if poly.area <= island_area:
+                continue
+            if poly.contains(centroid):
+                containing.append((poly.area, i))
+        except Exception as _e:
+            warnings.warn(
+                f"Bridge geometry error (containment check path {i}): {_e}",
+                RuntimeWarning, stacklevel=3,
+            )
+            continue
+
+    if containing:
+        containing.sort(key=lambda x: x[0])
+        target_idx = containing[0][1]
+        target_line = LineString(paths[target_idx])
+        try:
+            _, p_target = nearest_points(anchor, target_line)
+            p_island, _ = nearest_points(island_line, p_target)
+            best_island_pt = (p_island.x, p_island.y)
+            best_target_pt = (p_target.x, p_target.y)
+            best_target_idx = target_idx
+        except Exception as _e:
+            warnings.warn(
+                f"Bridge geometry error (nearest-points pass 1): {_e}",
+                RuntimeWarning, stacklevel=3,
+            )
+
+    # ── Pass 2: no containing path — anchor-guided nearest-path search ────
+    if best_island_pt is None:
+        best_dist = math.inf
+        for i, path in enumerate(paths):
+            if i == island.index or len(path) < 2:
+                continue
+            target_line = LineString(path)
+            try:
+                _, p_target = nearest_points(anchor, target_line)
+                p_island, _ = nearest_points(island_line, p_target)
+                dist = p_island.distance(p_target)
+            except Exception as _e:
+                warnings.warn(
+                    f"Bridge geometry error (nearest-points pass 2, path {i}): {_e}",
+                    RuntimeWarning, stacklevel=3,
+                )
+                continue
+            if dist < best_dist:
+                best_dist = dist
+                best_island_pt = (p_island.x, p_island.y)
+                best_target_pt = (p_target.x, p_target.y)
+                best_target_idx = i
+
+    if best_island_pt is None:
+        return None
+    return (best_island_pt, best_target_pt, best_target_idx)
+
+
 def add_bridges(
     analysis: AnalysisResult,
     bridge_width_mm: float = DEFAULT_BRIDGE_WIDTH_MM,
@@ -94,23 +216,15 @@ def add_bridges(
     Returns:
         BridgeResult with modified paths containing bridge geometry.
     """
-    # Convert the user-facing mm value to pixels for all geometry calculations
     bridge_px = mm_to_px(bridge_width_mm, dpi)
-
-    # Create a mutable copy of all paths — we will modify island paths in-place
-    # to insert bridge geometry without altering the originals
     paths = [list(p) for p in analysis.all_paths]
     bridges: List[Bridge] = []
 
-    # If no islands were found, there's nothing to bridge — return paths as-is
     if not analysis.islands:
         return BridgeResult(paths=paths, bridges=[], image_size=analysis.image_size, dpi=dpi)
 
-    # Process each island in turn, finding its nearest neighbour and inserting a bridge
     for island in analysis.islands:
-        bridge = _bridge_island(island, paths, analysis, bridge_px)
-        if bridge:
-            bridges.append(bridge)
+        bridges.extend(_bridge_island(island, paths, analysis, bridge_px))
 
     return BridgeResult(paths=paths, bridges=bridges, image_size=analysis.image_size, dpi=dpi)
 
@@ -120,114 +234,53 @@ def _bridge_island(
     paths: List[Path2D],
     analysis: AnalysisResult,
     bridge_px: float,
-) -> Optional[Bridge]:
-    """Find the correct target path and insert a bridge into the island path.
+) -> List[Bridge]:
+    """Find target path(s) and insert bridge(s) into the island path.
 
-    Strategy — prefer containment over proximity:
-
-      1. Find every path whose polygon contains the island's centroid.
-         These are "parent" shapes that the island sits inside (e.g. the outer
-         stroke of the letter whose counter this island is).  Bridge to the
-         SMALLEST such parent — that is the most immediate enclosing boundary.
-
-      2. If no enclosing parent exists (free-floating island), fall back to the
-         centroid-guided nearest-path search: find the point on each candidate
-         nearest to the island centroid, then find the island-side point nearest
-         to that anchor, and pick the shortest such connection.
-
-    Using containment first fixes the most common bad-placement case: letter
-    counters (holes in A, D, O, R …) would otherwise bridge to whichever other
-    letter outline happened to be geometrically closest, producing bridges that
-    cut straight across words.  With containment, each counter bridges to the
-    stroke of its own letter.
+    Adds a second bridge at the far end of elongated islands so that long thin
+    shapes are held at both ends rather than dangling from a single tab.
     """
-    island_line = LineString(island.path)
     centroid = island.polygon.centroid
 
-    best_island_pt: Optional[Tuple[float, float]] = None
-    best_target_pt: Optional[Tuple[float, float]] = None
-    best_target_idx: Optional[int] = None
+    r1 = _find_best_target(centroid, island, paths)
+    if r1 is None:
+        return []
 
-    # ── Pass 1: find the innermost path that contains this island ─────────
-    island_area = island.polygon.area
-    containing: List[Tuple[float, int]] = []   # (area, path_index)
-    for i, path in enumerate(paths):
-        if i == island.index or len(path) < 3:
-            continue
-        try:
-            poly = Polygon(path)
-            if not poly.is_valid:
-                poly = poly.buffer(0)
-            # Only a larger path can be a genuine container — a path with
-            # smaller area than the island cannot enclose it.  Without this
-            # filter, concentric shapes (nested rings, counters inside a
-            # large letter) pick tiny inner paths as targets, producing
-            # zero-length or cross-cutting bridges.
-            if poly.area <= island_area:
-                continue
-            if poly.contains(centroid):
-                containing.append((poly.area, i))
-        except Exception as _e:
-            import warnings
-            warnings.warn(f"Bridge geometry error (containment check path {i}): {_e}", RuntimeWarning, stacklevel=2)
-            continue
+    island_pt1, target_pt1, target_idx1 = r1
+    _insert_bridge_into_path(paths[island.index], island_pt1, target_pt1, bridge_px)
 
-    if containing:
-        # Smallest enclosing area = most immediate parent (e.g. the letter stroke)
-        containing.sort(key=lambda x: x[0])
-        target_idx = containing[0][1]
-        target_line = LineString(paths[target_idx])
-        try:
-            _, p_target = nearest_points(centroid, target_line)
-            p_island, _ = nearest_points(island_line, p_target)
-            best_island_pt = (p_island.x, p_island.y)
-            best_target_pt = (p_target.x, p_target.y)
-            best_target_idx = target_idx
-        except Exception as _e:
-            import warnings
-            warnings.warn(f"Bridge geometry error (nearest-points pass 1): {_e}", RuntimeWarning, stacklevel=2)
-            # fall through to pass 2
-
-    # ── Pass 2: no containing path — centroid-guided nearest-path search ──
-    if best_island_pt is None:
-        best_dist = math.inf
-        for i, path in enumerate(paths):
-            if i == island.index or len(path) < 2:
-                continue
-            target_line = LineString(path)
-            try:
-                _, p_target = nearest_points(centroid, target_line)
-                p_island, _ = nearest_points(island_line, p_target)
-                dist = p_island.distance(p_target)
-            except Exception as _e:
-                import warnings
-                warnings.warn(f"Bridge geometry error (nearest-points pass 2, path {i}): {_e}", RuntimeWarning, stacklevel=2)
-                continue
-            if dist < best_dist:
-                best_dist = dist
-                best_island_pt = (p_island.x, p_island.y)
-                best_target_pt = (p_target.x, p_target.y)
-                best_target_idx = i
-
-    if best_island_pt is None:
-        return None
-
-    # Mutate the island path to splice in the bridge rectangle points
-    _insert_bridge_into_path(
-        paths[island.index],
-        best_island_pt,
-        best_target_pt,
-        bridge_px,
-    )
-
-    # Return bridge metadata so the UI can draw the dashed-line marker
-    return Bridge(
+    result: List[Bridge] = [Bridge(
         island_idx=island.index,
-        target_idx=best_target_idx,
-        island_pt=best_island_pt,
-        target_pt=best_target_pt,
+        target_idx=target_idx1,
+        island_pt=island_pt1,
+        target_pt=target_pt1,
         width_px=bridge_px,
-    )
+    )]
+
+    # If the island is elongated, add a second bridge at the opposite end so the
+    # far tip doesn't remain free to vibrate or fall out during cutting.
+    far_pt = _farthest_path_point(island.path, island_pt1)
+    if far_pt is not None:
+        far_dist = math.hypot(far_pt[0] - island_pt1[0], far_pt[1] - island_pt1[1])
+        if far_dist > _MIN_SECOND_BRIDGE_PX:
+            r2 = _find_best_target(Point(far_pt), island, paths)
+            if r2 is not None:
+                island_pt2, target_pt2, target_idx2 = r2
+                # Skip if both endpoints are nearly identical to the first bridge
+                # (happens when the only target path has a single nearest point
+                # regardless of anchor — e.g. free-floating islands far from everything).
+                sep = math.hypot(island_pt2[0] - island_pt1[0], island_pt2[1] - island_pt1[1])
+                if sep > bridge_px * 2:
+                    _insert_bridge_into_path(paths[island.index], island_pt2, target_pt2, bridge_px)
+                    result.append(Bridge(
+                        island_idx=island.index,
+                        target_idx=target_idx2,
+                        island_pt=island_pt2,
+                        target_pt=target_pt2,
+                        width_px=bridge_px,
+                    ))
+
+    return result
 
 
 def _insert_bridge_into_path(
