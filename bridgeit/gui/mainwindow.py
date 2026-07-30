@@ -978,6 +978,19 @@ class MainWindow(QMainWindow):
             self._source_image = orig.copy()
             self._preview.show_image_from_pil(orig)
             self._btn_view_image.setEnabled(True)
+
+            # Auto-fill the DPI spinbox from image metadata when available.
+            # PIL exposes this via img.info["dpi"] for JPEG and PNG files that
+            # carry an embedded resolution tag.  Silently ignored if absent.
+            try:
+                raw_dpi = orig.info.get("dpi")
+                if raw_dpi:
+                    detected = float(raw_dpi[0]) if hasattr(raw_dpi, "__getitem__") else float(raw_dpi)
+                    if 10.0 <= detected <= 2400.0:
+                        self._controls.set_dpi(detected)
+            except Exception:
+                pass
+
         except Exception as exc:
             _LOG.exception("Failed to open image: %s", path)
             self._source_image = None
@@ -1084,6 +1097,11 @@ class MainWindow(QMainWindow):
             if self._manual_bridges:
                 active_paths = apply_manual_bridges(active_paths, self._manual_bridges)
 
+            kerf_mm = self._controls.get_settings().kerf_mm
+            if kerf_mm > 0:
+                from bridgeit.pipeline.export import _apply_kerf
+                active_paths = _apply_kerf(active_paths, kerf_mm, br.dpi)
+
             modified_br = BridgeResult(
                 paths=active_paths,
                 bridges=br.bridges,
@@ -1133,6 +1151,11 @@ class MainWindow(QMainWindow):
 
             if self._manual_bridges:
                 active_paths = apply_manual_bridges(active_paths, self._manual_bridges)
+
+            kerf_mm = self._controls.get_settings().kerf_mm
+            if kerf_mm > 0:
+                from bridgeit.pipeline.export import _apply_kerf
+                active_paths = _apply_kerf(active_paths, kerf_mm, br.dpi)
 
             modified_br = BridgeResult(
                 paths=active_paths,

@@ -54,6 +54,7 @@ class PipelineSettings:
     # When non-empty, flood-fill erasure replaces the auto bg-removal step.
     erase_seeds: list = field(default_factory=list)    # [(x, y), ...]
     erase_tolerance: int = 30                           # per-channel flood-fill tolerance
+    kerf_mm: float = 0.0                               # laser kerf compensation (applied at export)
 
 
 @dataclass
