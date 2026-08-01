@@ -296,7 +296,7 @@ class ControlsPanel(QWidget):
         for w in (self._bridge_spin, self._bridge_slider):
             w.blockSignals(True)
         self._bridge_spin.setValue(value)
-        self._bridge_slider.setValue(int(value * 10))
+        self._bridge_slider.setValue(int(round(value * 10)))
         for w in (self._bridge_spin, self._bridge_slider):
             w.blockSignals(False)
 
@@ -349,7 +349,7 @@ class ControlsPanel(QWidget):
 
         # Bridge width: spinbox → slider (convert mm to slider ticks)
         self._bridge_spin.valueChanged.connect(
-            lambda v: self._bridge_slider.setValue(int(v * 10))
+            lambda v: self._bridge_slider.setValue(int(round(v * 10)))
         )
         # Bridge width: slider → spinbox (convert slider ticks back to mm)
         self._bridge_slider.valueChanged.connect(
@@ -358,7 +358,7 @@ class ControlsPanel(QWidget):
 
         # Contour smoothing: same pattern
         self._smooth_spin.valueChanged.connect(
-            lambda v: self._smooth_slider.setValue(int(v * 10))
+            lambda v: self._smooth_slider.setValue(int(round(v * 10)))
         )
         self._smooth_slider.valueChanged.connect(
             lambda v: self._smooth_spin.setValue(v / 10.0)

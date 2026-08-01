@@ -195,6 +195,8 @@ class _PipelineWorker(QObject):
             if p.is_alive():
                 p.kill()   # last resort
 
+            if result_tuple is None:
+                raise RuntimeError("Pipeline subprocess ended without a result (may have been killed by the OS)")
             tag, value = result_tuple
             if tag == "err":
                 raise RuntimeError(value)
@@ -256,6 +258,7 @@ class MainWindow(QMainWindow):
         # ── Canvas edit state (synced to/from the canvas widget) ──────────
         self._excluded_paths: set = set()        # path indices hidden by the user
         self._manual_bridges: list = []          # all confirmed bridges (auto + manual)
+        self._is_fresh_load: bool = False        # True only for a brand-new image load
 
         # ── Bridge toolbar state ──────────────────────────────────────────
         # True when there are staged bridges and the toolbar button acts as "Confirm"
@@ -1007,6 +1010,7 @@ class MainWindow(QMainWindow):
                 self._btn_crop.setEnabled(True)
                 self._controls.set_controls_enabled(True)
             return
+        self._is_fresh_load = True
         self._run_pipeline(source=path, preview_only=False)
 
     @pyqtSlot(object)
@@ -1600,9 +1604,8 @@ class MainWindow(QMainWindow):
                 self._btn_delete.setEnabled(True)
                 self._btn_add_bridge.setEnabled(True)
                 self._btn_auto_bridge.setEnabled(True)
-                self._controls.set_controls_enabled(True)
-            elif have_nobg:
-                self._controls.set_controls_enabled(True)
+            # Always re-enable settings controls so the user can adjust and retry
+            self._controls.set_controls_enabled(True)
             return
 
         # Cache the background-removed image so future preview re-runs don't
@@ -1615,8 +1618,9 @@ class MainWindow(QMainWindow):
         on_canvas = self._preview.is_canvas_visible()
 
         if result.bridge_result:
-            if not on_canvas:
-                # Fresh image load — clear any edits from the previous image
+            if self._is_fresh_load:
+                self._is_fresh_load = False
+                # Genuine new image — wipe any edits carried over from the previous file
                 self._excluded_paths = set()
                 self._manual_bridges = []
             else:
@@ -1653,17 +1657,20 @@ class MainWindow(QMainWindow):
         paths   = len(result.paths) if result.paths else 0
         self._controls.update_info(islands, len(self._manual_bridges), paths, result.elapsed_seconds)
 
-        self._btn_export.setEnabled(True)
-        self._btn_export_image.setEnabled(True)
-        self._btn_export_dxf.setEnabled(True)
+        have_paths = paths > 0
+        self._btn_export.setEnabled(have_paths)
+        self._btn_export_image.setEnabled(have_paths)
+        self._btn_export_dxf.setEnabled(have_paths)
         self._btn_erase.setEnabled(True)
         self._btn_crop.setEnabled(True)
         self._controls.set_controls_enabled(True)
-        self._set_status(
+        status_msg = (
             f"Done — {islands} island(s) detected in {result.elapsed_seconds:.2f}s  "
-            "· click Auto Bridge to suggest placements",
-            success=True,
+            "· click Auto Bridge to suggest placements"
+            if have_paths else
+            f"No shapes detected in {result.elapsed_seconds:.2f}s — try adjusting Min Area or smoothing"
         )
+        self._set_status(status_msg, success=have_paths)
 
         # If settings changed while this run was in progress, kick off another run now
         if self._pending_settings:
@@ -2118,6 +2125,13 @@ class MainWindow(QMainWindow):
         layout.addWidget(btn_close)
 
         dlg.exec()
+
+    def closeEvent(self, event) -> None:
+        """Stop background threads before the window closes."""
+        if self._update_checker and self._update_checker.isRunning():
+            self._update_checker.quit()
+            self._update_checker.wait(2000)
+        super().closeEvent(event)
 
     @property
     def _bridges(self):

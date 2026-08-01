@@ -236,6 +236,9 @@ class ImagePreview(QLabel):
         w, h = self.width(), self.height()       # size of this widget in screen pixels
         pw, ph = self._pixmap.width(), self._pixmap.height()  # size of the image
 
+        if pw == 0 or ph == 0:
+            return
+
         # Compute the scale needed to fit the image in the window, then apply zoom.
         # min() ensures we scale to fit the smaller dimension (letterboxing).
         scale = min(w / pw, h / ph) * self._zoom

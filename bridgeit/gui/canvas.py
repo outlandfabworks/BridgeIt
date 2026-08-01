@@ -747,9 +747,6 @@ class InteractiveCanvas(QGraphicsView):
           3. Confirmed bridges — removed from _manual_bridges;
              triggers a canvas reload via paths_modified.
         """
-        self._push_undo()
-        changed = False
-
         # ── 1. Delete selected staged bridges ─────────────────────────────
         # Work backwards through the list so indices stay valid as we remove items.
         staged_sel = [i for i, s in enumerate(self._staged_items) if s.selected]
@@ -757,14 +754,16 @@ class InteractiveCanvas(QGraphicsView):
             self._scene.removeItem(self._staged_items[i])
             self._staged_items.pop(i)
             self._staged_data.pop(i)
-            changed = True
         # Fix up staged_index on remaining items so they stay in sync with the list
         for j, s in enumerate(self._staged_items):
             s.staged_index = j
         if staged_sel:
-            # Staged changes don't need a full pipeline reload — just update the toolbar hint
+            # Staged bridges aren't part of persisted canvas state — don't push undo
             self._emit_mode_hint()
             return
+
+        self._push_undo()
+        changed = False
 
         # ── 2. Delete selected paths ──────────────────────────────────────
         to_exclude = {item.path_index for item in self._items if item.selected}

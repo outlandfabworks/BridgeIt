@@ -319,9 +319,15 @@ def _apply_kerf(paths: list, kerf_mm: float, dpi: float) -> list:
                 continue
             if isinstance(shrunk, MultiPolygon):
                 for sub in shrunk.geoms:
-                    result.append(list(sub.exterior.coords))
+                    coords = list(sub.exterior.coords)
+                    if len(coords) > 1 and coords[0] == coords[-1]:
+                        coords = coords[:-1]
+                    result.append(coords)
             else:
-                result.append(list(shrunk.exterior.coords))
+                coords = list(shrunk.exterior.coords)
+                if len(coords) > 1 and coords[0] == coords[-1]:
+                    coords = coords[:-1]
+                result.append(coords)
         except Exception:
             result.append(path)
     return result
