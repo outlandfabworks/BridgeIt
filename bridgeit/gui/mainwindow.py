@@ -103,7 +103,7 @@ def _apply_dialog_theme(dlg: "QMessageBox") -> None:
             border-color: {t['accent']};
         }}
         QTextEdit {{
-            background-color: {t['bg']};
+            background-color: {t['window_bg']};
             color: {t['text_muted']};
             font-family: monospace;
             font-size: 11px;
