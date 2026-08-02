@@ -4,6 +4,14 @@ All notable changes to BridgeIt are listed here.
 
 ---
 
+## [1.6.4] - 2026-08-02
+### Changes
+- fix: stability and UX audit fixes — v1.6.4
+- fix: KeyError 'bg' crash in _apply_dialog_theme
+- v1.6.3: kerf compensation, DPI auto-detect, Export Settings card
+
+---
+
 ## [1.6.3] - 2026-07-30
 ### Changes
 - v1.6.3: kerf compensation, DPI auto-detect, Export Settings card
