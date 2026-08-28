@@ -139,9 +139,15 @@ def _path_to_polygon(path: Path2D) -> Polygon:
 
     poly = Polygon(coords)
 
-    # Fix any self-intersections that arise from noisy pixel-traced outlines
+    # Fix any self-intersections that arise from noisy pixel-traced outlines.
+    # buffer(0) can return a MultiPolygon for truly degenerate rings; in that
+    # case take the largest sub-polygon so the rest of the pipeline sees a
+    # simple Polygon with a valid .exterior attribute.
     if not poly.is_valid:
-        poly = poly.buffer(0)
+        fixed = poly.buffer(0)
+        if fixed.geom_type == "MultiPolygon":
+            fixed = max(fixed.geoms, key=lambda g: g.area)
+        poly = fixed
     return poly
 
 

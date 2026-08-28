@@ -386,7 +386,9 @@ class ControlsPanel(QWidget):
         self._bridge_spin.valueChanged.connect(self._emit_settings)
         self._smooth_spin.valueChanged.connect(self._emit_settings)
         self._area_spin.valueChanged.connect(self._emit_settings)
-        self._erase_tol_spin.valueChanged.connect(self._emit_settings)
+        # Erase tolerance is intentionally NOT wired to settings_changed — it only
+        # applies during background removal (flood-fill), which preview re-runs skip,
+        # so firing a re-run on tolerance change would be a no-op and waste time.
         self._dpi_spin.valueChanged.connect(self._emit_settings)
 
     def _emit_settings(self) -> None:

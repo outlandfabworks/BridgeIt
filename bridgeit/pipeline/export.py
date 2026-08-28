@@ -367,7 +367,7 @@ def _smooth_pts(path: Path2D, iterations: int = 4) -> list:
             while seg + 1 < len(cumlen) - 1 and cumlen[seg + 1] < target:
                 seg += 1
             seg_len = cumlen[seg + 1] - cumlen[seg]
-            t = (target - cumlen[seg]) / seg_len if seg_len > 1e-9 else 0.0
+            t = min(1.0, (target - cumlen[seg]) / seg_len) if seg_len > 1e-9 else 0.0
             resampled.append((
                 closed[seg][0] + t * (closed[seg + 1][0] - closed[seg][0]),
                 closed[seg][1] + t * (closed[seg + 1][1] - closed[seg][1]),

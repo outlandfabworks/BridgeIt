@@ -194,6 +194,7 @@ class _PipelineWorker(QObject):
             p.join(timeout=5)
             if p.is_alive():
                 p.kill()   # last resort
+                p.join(timeout=2)  # reap zombie
 
             if result_tuple is None:
                 raise RuntimeError("Pipeline subprocess ended without a result (may have been killed by the OS)")
@@ -943,6 +944,10 @@ class MainWindow(QMainWindow):
         Shows the raw (un-processed) image immediately so the user has something
         to look at while the pipeline runs in the background.
         """
+        # Ignore drops/opens that arrive while a pipeline run is already in
+        # progress — otherwise the finished handler loads the wrong image's paths.
+        if self._worker_thread and self._worker_thread.isRunning():
+            return
         # Reset canvas-dependent buttons and info panel so stale results from a
         # previous image can't be acted on while the new pipeline run is in progress.
         self._controls.reset_info()
@@ -1043,7 +1048,7 @@ class MainWindow(QMainWindow):
             # Special case: the Bridge Width control is showing a selected bridge's width.
             # Changing it should resize the bridge, not re-run the whole pipeline.
             from bridgeit.pipeline.bridge import mm_to_px
-            width_px = mm_to_px(settings.bridge_width_mm)
+            width_px = mm_to_px(settings.bridge_width_mm, dpi=settings.dpi)
             self._preview.canvas.update_selected_bridges_width(width_px)
             self._manual_bridges = self._preview.canvas.get_manual_bridges()
             return
@@ -1392,7 +1397,8 @@ class MainWindow(QMainWindow):
         else:
             # Enter bridge mode — sync the canvas's bridge width from the settings panel
             from bridgeit.pipeline.bridge import mm_to_px
-            canvas.bridge_width_px = mm_to_px(self._controls.get_settings().bridge_width_mm)
+            _s = self._controls.get_settings()
+            canvas.bridge_width_px = mm_to_px(_s.bridge_width_mm, dpi=_s.dpi)
             canvas.set_mode(CanvasMode.BRIDGE)
             self._btn_add_bridge.setChecked(True)
         # Make sure the canvas is visible and has keyboard focus
@@ -1748,7 +1754,8 @@ class MainWindow(QMainWindow):
             if dlg.clickedButton() != replace_btn:
                 return
         from bridgeit.pipeline.bridge import mm_to_px
-        canvas.bridge_width_px = mm_to_px(self._controls.get_settings().bridge_width_mm)
+        _s = self._controls.get_settings()
+        canvas.bridge_width_px = mm_to_px(_s.bridge_width_mm, dpi=_s.dpi)
         canvas.load_auto_bridge_suggestions(suggestions)
         canvas.set_mode(CanvasMode.BRIDGE)
         self._btn_add_bridge.setChecked(True)
