@@ -948,6 +948,9 @@ class MainWindow(QMainWindow):
         # progress — otherwise the finished handler loads the wrong image's paths.
         if self._worker_thread and self._worker_thread.isRunning():
             return
+        # Cancel any pending settings re-run queued from the previous image
+        self._settings_timer.stop()
+        self._pending_settings = None
         # Reset canvas-dependent buttons and info panel so stale results from a
         # previous image can't be acted on while the new pipeline run is in progress.
         self._controls.reset_info()
@@ -1248,7 +1251,7 @@ class MainWindow(QMainWindow):
             # At least one confirmed bridge is selected — enter editing mode
             self._editing_bridge_idx = bridges[0][0]   # ≥0 flags editing mode to the debouncer
             # Reflect the first selected bridge's width in the spin-box
-            width_mm = round(px_to_mm(bridges[0][1]), 2)
+            width_mm = round(px_to_mm(bridges[0][1], dpi=self._controls.get_settings().dpi), 2)
             self._controls.set_bridge_width_mm(width_mm)
             self._controls.set_bridge_editing_mode(True, count=len(bridges))
         else:
@@ -2135,6 +2138,18 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         """Stop background threads before the window closes."""
+        self._settings_timer.stop()
+        self._pending_settings = None
+        if self._worker_thread and self._worker_thread.isRunning():
+            # Disconnect result/error slots so they don't fire on the destroyed
+            # window object after we return.
+            try:
+                self._worker.finished.disconnect(self._on_pipeline_finished)
+                self._worker.error.disconnect(self._on_pipeline_error)
+            except Exception:
+                pass
+            self._worker_thread.quit()
+            self._worker_thread.wait(3000)
         if self._update_checker and self._update_checker.isRunning():
             self._update_checker.quit()
             self._update_checker.wait(2000)
