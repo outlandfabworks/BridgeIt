@@ -4,6 +4,12 @@ All notable changes to BridgeIt are listed here.
 
 ---
 
+## [1.6.5] - 2026-08-28
+### Changes
+- fix: audit fixes — v1.6.5
+
+---
+
 ## [1.6.4] - 2026-08-02
 ### Changes
 - fix: stability and UX audit fixes — v1.6.4
