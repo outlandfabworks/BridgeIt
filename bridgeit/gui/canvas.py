@@ -564,6 +564,17 @@ class InteractiveCanvas(QGraphicsView):
     def staged_count(self) -> int:
         return len(self._staged_data)
 
+    @property
+    def has_pending_pt1(self) -> bool:
+        """True when the user has placed the first bridge endpoint but not the second."""
+        return self._bridge_pt1 is not None
+
+    def cancel_pending_pt1(self) -> None:
+        """Cancel a pending first bridge point — called by Ctrl+Z in bridge mode."""
+        if self._bridge_pt1 is not None:
+            self._cancel_pt1()
+            self._emit_mode_hint()
+
     def fit_view(self) -> None:
         """Fit all canvas content back into the visible area (reset zoom/pan)."""
         bbox = self._scene.itemsBoundingRect()
@@ -967,29 +978,56 @@ class InteractiveCanvas(QGraphicsView):
     def keyPressEvent(self, event: QKeyEvent) -> None:
         """Handle keyboard shortcuts for delete, confirm, and escape."""
         if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
-            # Delete / Backspace: remove selected items
             self.delete_selected()
         elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            # Enter: confirm all staged bridges (only works in bridge mode)
             if self._mode == Mode.BRIDGE and self._staged_data:
                 self.confirm_staged_bridges()
+        elif event.key() == Qt.Key.Key_A and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            # Ctrl+A: select all paths and confirmed bridges
+            for item in self._items:
+                item.set_sel(True)
+            for bitem in self._bridge_items:
+                bitem.set_sel(True)
+            self.selection_changed.emit()
         elif event.key() == Qt.Key.Key_Escape:
             if self._mode == Mode.BRIDGE:
                 if self._bridge_pt1 is not None:
-                    # First Escape: cancel the pending first point (yellow dot)
                     self._cancel_pt1()
                     self._emit_mode_hint()
                 elif self._staged_data:
-                    # Second Escape: discard all staged bridges
                     self._cancel_staged()
                     self._emit_mode_hint()
                 else:
-                    # Third Escape (nothing pending): exit bridge mode entirely
                     self.set_mode(Mode.SELECT)
             else:
-                # In SELECT mode, Escape just clears the selection
                 self.clear_selection()
         super().keyPressEvent(event)
+
+    def contextMenuEvent(self, event) -> None:
+        """Right-click context menu for SELECT mode."""
+        from PyQt6.QtWidgets import QMenu
+        if self._mode != Mode.SELECT:
+            return
+        menu = QMenu(self)
+        has_sel = any(i.selected for i in self._items) or any(b.selected for b in self._bridge_items)
+        act_all = menu.addAction("Select All  (Ctrl+A)")
+        act_all.triggered.connect(lambda: (
+            [i.set_sel(True) for i in self._items],
+            [b.set_sel(True) for b in self._bridge_items],
+            self.selection_changed.emit(),
+        ))
+        if has_sel:
+            act_del = menu.addAction("Delete Selected  (Delete)")
+            act_del.triggered.connect(self.delete_selected)
+        menu.addSeparator()
+        act_fit = menu.addAction("Fit to Window  (Home)")
+        act_fit.triggered.connect(
+            lambda: self.fitInView(
+                self._scene.itemsBoundingRect(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+            )
+        )
+        menu.exec(event.globalPos())
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

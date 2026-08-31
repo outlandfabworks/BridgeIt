@@ -82,7 +82,7 @@ class DropZone(QWidget):
         self._title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._title_lbl.setStyleSheet(f"color: {t['text']}; font-size: 18px; font-weight: 600;")
 
-        self._sub_lbl = QLabel("PNG or JPG — background will be removed automatically")
+        self._sub_lbl = QLabel("PNG, JPG, WebP, or BMP — background will be removed automatically")
         self._sub_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._sub_lbl.setStyleSheet(f"color: {t['text_muted']}; font-size: 12px;")
 

@@ -145,6 +145,14 @@ class _PipelineWorker(QObject):
         self._nobg_image = nobg_image
         # preview_only=True skips background removal and reuses the cached image
         self._preview_only = preview_only
+        self._process = None      # the child subprocess (set in run())
+        self._cancelled = False   # set by cancel() to suppress the error signal
+
+    def cancel(self) -> None:
+        """Request cancellation — terminates the subprocess and suppresses the error signal."""
+        self._cancelled = True
+        if self._process and self._process.is_alive():
+            self._process.terminate()
 
     @pyqtSlot()
     def run(self) -> None:
@@ -176,36 +184,39 @@ class _PipelineWorker(QObject):
                     args=(q, self._source, self._runner.settings),
                 )
 
+            self._process = p
             p.start()
 
-            # Poll the queue so we detect if the child dies unexpectedly
-            result_tuple = None
-            while result_tuple is None:
+            # Poll the queue — route ("progress", msg) to the UI, break on result
+            result = None
+            while result is None:
                 try:
-                    result_tuple = q.get(timeout=5)
+                    tag, value = q.get(timeout=2)
                 except Exception:  # queue.Empty on timeout
                     if not p.is_alive():
+                        if self._cancelled:
+                            return  # clean cancel — suppress error signal
                         raise RuntimeError("Pipeline process terminated unexpectedly")
+                    continue
+                if tag == "progress":
+                    self.progress.emit(value)
+                elif tag == "ok":
+                    result = value
+                elif tag == "err":
+                    raise RuntimeError(value)
 
-            # Clean up child process — terminate first as fallback if it
-            # hasn't exited yet, then join to release OS resources
+            # Clean up child process
             if p.is_alive():
                 p.terminate()
             p.join(timeout=5)
             if p.is_alive():
-                p.kill()   # last resort
-                p.join(timeout=2)  # reap zombie
-
-            if result_tuple is None:
-                raise RuntimeError("Pipeline subprocess ended without a result (may have been killed by the OS)")
-            tag, value = result_tuple
-            if tag == "err":
-                raise RuntimeError(value)
-            result = value
+                p.kill()
+                p.join(timeout=2)
 
             self.finished.emit(result)
         except Exception as exc:
-            self.error.emit(str(exc))
+            if not self._cancelled:
+                self.error.emit(str(exc))
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +313,7 @@ class MainWindow(QMainWindow):
         # Global keyboard shortcuts
         QShortcut(QKeySequence("Ctrl+S"), self).activated.connect(self._on_export_clicked)
         QShortcut(QKeySequence("Ctrl+O"), self).activated.connect(self._on_open_clicked)
+        QShortcut(QKeySequence("A"), self).activated.connect(self._on_auto_bridge)
         QShortcut(QKeySequence("B"), self).activated.connect(self._on_toggle_bridge_mode)
         QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(self._on_undo)
         QShortcut(QKeySequence("Ctrl+Shift+Z"), self).activated.connect(self._on_redo)
@@ -486,7 +498,7 @@ class MainWindow(QMainWindow):
         hlay.addWidget(self._header_sep())
         hlay.addSpacing(4)
 
-        self._btn_view_image = self._header_btn("original", "Original  (background-removed image)")
+        self._btn_view_image = self._header_btn("original", "Original Image  (the source file as opened)")
         self._btn_view_image.setEnabled(False)
         self._btn_view_image.clicked.connect(self._show_original)
         hlay.addWidget(self._btn_view_image)
@@ -513,7 +525,7 @@ class MainWindow(QMainWindow):
 
         self._btn_auto_bridge = self._header_btn(
             "auto_bridge",
-            "Auto Bridge  — suggest bridge placements for all islands",
+            "Auto Bridge  (A)  — suggest bridge placements for all islands",
         )
         self._btn_auto_bridge.setEnabled(False)
         self._btn_auto_bridge.clicked.connect(self._on_auto_bridge)
@@ -542,6 +554,14 @@ class MainWindow(QMainWindow):
 
         # ── RIGHT: meta controls ──────────────────────────────────────────
         hlay.addStretch()
+
+        # Cancel button — shown only during active pipeline runs
+        self._btn_cancel = QPushButton("✕  Cancel")
+        self._btn_cancel.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_cancel.setFixedHeight(28)
+        self._btn_cancel.hide()
+        self._btn_cancel.clicked.connect(self._on_cancel_pipeline)
+        hlay.addWidget(self._btn_cancel)
 
         # Update button — hidden until _on_update_available fires
         self._btn_update = QPushButton("⬆ Update available")
@@ -947,6 +967,7 @@ class MainWindow(QMainWindow):
         # Ignore drops/opens that arrive while a pipeline run is already in
         # progress — otherwise the finished handler loads the wrong image's paths.
         if self._worker_thread and self._worker_thread.isRunning():
+            self._set_status("Pipeline is busy — wait for it to finish before opening another image")
             return
         # Cancel any pending settings re-run queued from the previous image
         self._settings_timer.stop()
@@ -1005,7 +1026,8 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             _LOG.exception("Failed to open image: %s", path)
             self._source_image = None
-            self._set_status(f"Could not open image: {exc}", error=True)
+            short_err = str(exc).split("\n")[0][:120]
+            self._set_status(f"Could not open image: {short_err}", error=True)
             if self._last_result and self._last_result.bridge_result:
                 self._btn_export.setEnabled(True)
                 self._btn_export_image.setEnabled(True)
@@ -1226,7 +1248,9 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot()
     def _show_original(self) -> None:
-        if self._nobg_image:
+        if self._source_image:
+            self._preview.show_image_from_pil(self._source_image)
+        elif self._nobg_image:
             self._preview.show_image_from_pil(self._nobg_image)
 
     @pyqtSlot()
@@ -1282,11 +1306,11 @@ class MainWindow(QMainWindow):
             ("GLOBAL", [
                 ("Ctrl+O",                "Open image file"),
                 ("Ctrl+S",                "Export SVG"),
+                ("A",                     "Auto Bridge — suggest placements for all islands"),
                 ("B",                     "Toggle bridge mode"),
-                ("Ctrl+Z",                "Undo last delete or bridge confirm"),
+                ("Ctrl+Z",                "Undo  (in bridge mode: cancel pending first point)"),
                 ("Ctrl+Shift+Z",          "Redo"),
                 ("Home",                  "Fit canvas to window"),
-                ("Erase button",          "Click background pixels to remove colour range"),
             ]),
             ("NAVIGATION", [
                 ("Scroll wheel",          "Zoom in / out"),
@@ -1296,8 +1320,10 @@ class MainWindow(QMainWindow):
                 ("Click",                 "Select a path or bridge"),
                 ("Ctrl+click / Shift+click", "Add to selection"),
                 ("Click+drag",            "Rubber-band select region"),
+                ("Ctrl+A",                "Select all paths and bridges"),
                 ("Delete / Backspace",    "Remove selected items"),
                 ("Escape",                "Deselect all"),
+                ("Right-click",           "Context menu (Select All, Delete, Fit)"),
             ]),
             ("BRIDGE MODE", [
                 ("Click (pt 1)",          "Place first endpoint (snaps to path)"),
@@ -1575,6 +1601,7 @@ class MainWindow(QMainWindow):
         # Worker finished → call our finished handler (back on main thread)
         self._worker.finished.connect(self._on_pipeline_finished)
         self._worker.error.connect(self._on_pipeline_error)
+        self._worker.progress.connect(self._set_status)
         # After worker finishes (or errors), stop the thread; cleanup via slot
         # that nulls instance references BEFORE calling deleteLater() so no
         # code ever calls isRunning() on a deleted C++ object.
@@ -1651,7 +1678,13 @@ class MainWindow(QMainWindow):
             self._btn_view_svg.setEnabled(True)
             self._btn_delete.setEnabled(True)
             self._btn_add_bridge.setEnabled(True)
-            self._btn_auto_bridge.setEnabled(True)
+            has_islands = bool(result.analysis and result.analysis.islands)
+            self._btn_auto_bridge.setEnabled(has_islands)
+            self._btn_auto_bridge.setToolTip(
+                "Auto Bridge  (A)  — suggest bridge placements for all islands"
+                if has_islands else
+                "Auto Bridge  — no islands detected in this image"
+            )
 
         # Switch to image view — but only if we're not already on the canvas.
         # This prevents the view from jumping away when the user tweaks a setting
@@ -1709,14 +1742,40 @@ class MainWindow(QMainWindow):
         dlg.setWindowTitle("Pipeline Error")
         dlg.setIcon(QMessageBox.Icon.Critical)
         dlg.setText(summary)
+        dlg.setInformativeText(
+            "Try adjusting Min Area or Smoothing, or use a different image. "
+            "Expand Details for the full error."
+        )
         if len(lines) > 1:
             dlg.setDetailedText(message)
         _apply_dialog_theme(dlg)
         dlg.exec()
 
     @pyqtSlot()
+    def _on_cancel_pipeline(self) -> None:
+        """Cancel the running pipeline and restore the UI."""
+        if self._worker:
+            self._worker.cancel()
+        self._set_busy(False)
+        self._set_status("Processing cancelled")
+        self._controls.set_controls_enabled(True)
+        if self._last_result and self._last_result.bridge_result:
+            self._btn_export.setEnabled(True)
+            self._btn_export_image.setEnabled(True)
+            self._btn_export_dxf.setEnabled(True)
+            self._btn_view_svg.setEnabled(True)
+            self._btn_delete.setEnabled(True)
+            self._btn_add_bridge.setEnabled(True)
+            self._btn_auto_bridge.setEnabled(True)
+
+    @pyqtSlot()
     def _on_undo(self) -> None:
-        self._preview.canvas.undo()
+        canvas = self._preview.canvas
+        # In bridge mode with a pending first point, cancel the dot instead of undoing
+        if canvas.mode == CanvasMode.BRIDGE and canvas.has_pending_pt1:
+            canvas.cancel_pending_pt1()
+        else:
+            canvas.undo()
 
     @pyqtSlot()
     def _on_redo(self) -> None:
@@ -1780,6 +1839,10 @@ class MainWindow(QMainWindow):
           cleared when the user loads a new image or right-clicks the button.
         """
         if self._btn_erase.isChecked():
+            # Mutual exclusion: deactivate lasso if it's active
+            if self._btn_crop.isChecked():
+                self._btn_crop.setChecked(False)
+                self._preview.img_preview.set_lasso_mode(False)
             # Entering erase mode — show the original image for colour sampling
             if self._source_image is not None:
                 self._preview.show_image_from_pil(self._source_image)
@@ -1855,6 +1918,10 @@ class MainWindow(QMainWindow):
         Second click (toggle off): clear the selection and re-run at full size.
         """
         if self._btn_crop.isChecked():
+            # Mutual exclusion: deactivate erase mode if it's active
+            if self._btn_erase.isChecked():
+                self._btn_erase.setChecked(False)
+                self._preview.img_preview.set_erase_mode(False)
             # Entering crop mode — show original so the user can see full extent
             if self._source_image is not None:
                 self._preview.show_image_from_pil(self._source_image)
@@ -1867,7 +1934,18 @@ class MainWindow(QMainWindow):
                 "right-click or click first point to close  ·  Backspace = undo last point"
             )
         else:
-            # Toggling off — clear the lasso and revert to full-image processing
+            # Toggling off — confirm if there's an active polygon
+            if self._lasso_points and len(self._lasso_points) > 2:
+                dlg = QMessageBox(self)
+                dlg.setWindowTitle("Clear Trace Selection?")
+                dlg.setText("Clear the trace selection and reprocess the full image?")
+                dlg.addButton("Clear & Reprocess", QMessageBox.ButtonRole.AcceptRole)
+                keep_btn = dlg.addButton("Keep Selection", QMessageBox.ButtonRole.RejectRole)
+                _apply_dialog_theme(dlg)
+                dlg.exec()
+                if dlg.clickedButton() == keep_btn:
+                    self._btn_crop.setChecked(True)
+                    return
             self._lasso_points = None
             self._preview.img_preview.set_lasso_mode(False)
             self._preview.img_preview.set_confirmed_lasso(None)
@@ -1934,7 +2012,8 @@ class MainWindow(QMainWindow):
     def _set_busy(self, busy: bool) -> None:
         """Show/hide the progress indicator and disable/enable the Open button."""
         self._progress_bar.setVisible(busy)
-        self._btn_open.setEnabled(not busy)   # prevent opening another file mid-run
+        self._btn_open.setEnabled(not busy)
+        self._btn_cancel.setVisible(busy)
 
     def _set_status(self, message: str, success: bool = False, error: bool = False) -> None:
         """Update the status bar text and colour.
@@ -2072,7 +2151,12 @@ class MainWindow(QMainWindow):
             dlg.reject()
 
         btn_donate.clicked.connect(_on_donate)
-        btn_later.clicked.connect(dlg.reject)
+        def _on_maybe_later():
+            from PyQt6.QtCore import QSettings
+            # Reset counter so the prompt won't reappear for ~30 more exports
+            QSettings("OutlandFabworks", "BridgeIt").setValue("donation/export_count", 0)
+            dlg.reject()
+        btn_later.clicked.connect(_on_maybe_later)
         btn_dismiss.clicked.connect(_on_dismiss)
 
         dlg.exec()
