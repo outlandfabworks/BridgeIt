@@ -4,6 +4,12 @@ All notable changes to BridgeIt are listed here.
 
 ---
 
+## [1.6.9] - 2026-09-01
+### Changes
+- fix: pre-release polish — v1.6.9
+
+---
+
 ## [1.6.8] - 2026-09-01
 ### Changes
 - fix: programming audit fixes — v1.6.8
