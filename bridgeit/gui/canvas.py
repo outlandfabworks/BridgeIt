@@ -501,8 +501,8 @@ class InteractiveCanvas(QGraphicsView):
         self._manual_bridges: List[Tuple] = []
 
         # ── Staged (not-yet-confirmed) bridges ────────────────────────────
-        # _staged_data stores the raw coordinates; _staged_items are the green rectangles.
-        self._staged_data: List[Tuple[Tuple, Tuple]] = []   # [(pt1, pt2), ...]
+        # _staged_data stores raw coordinates + the width at placement time.
+        self._staged_data: List[Tuple[Tuple, Tuple, float]] = []   # [(pt1, pt2, width_px), ...]
         self._staged_items: List[_StagedBridgeItem] = []
 
         # ── Undo / redo stacks ────────────────────────────────────────────
@@ -741,7 +741,7 @@ class InteractiveCanvas(QGraphicsView):
             pt1 = bridge.island_pt
             pt2 = bridge.target_pt
             idx = len(self._staged_data)
-            self._staged_data.append((pt1, pt2))
+            self._staged_data.append((pt1, pt2, self._bridge_width_px))
             item = _StagedBridgeItem(pt1, pt2, idx, self._bridge_width_px)
             self._scene.addItem(item)
             self._staged_items.append(item)
@@ -815,8 +815,8 @@ class InteractiveCanvas(QGraphicsView):
         for staged_item in self._staged_items:
             self._scene.removeItem(staged_item)
         self._staged_items.clear()
-        for pt1, pt2 in self._staged_data:
-            self._manual_bridges.append((pt1, pt2, self._bridge_width_px))
+        for pt1, pt2, width_px in self._staged_data:
+            self._manual_bridges.append((pt1, pt2, width_px))
         self._staged_data.clear()
         self.paths_modified.emit()
         self._emit_mode_hint()
@@ -1069,7 +1069,7 @@ class InteractiveCanvas(QGraphicsView):
 
             # Add this bridge to the staged list and draw its preview rectangle
             idx = len(self._staged_data)
-            self._staged_data.append((pt1, snapped))
+            self._staged_data.append((pt1, snapped, self._bridge_width_px))
             staged_item = _StagedBridgeItem(pt1, snapped, idx, self._bridge_width_px)
             self._scene.addItem(staged_item)
             self._staged_items.append(staged_item)

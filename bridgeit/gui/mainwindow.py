@@ -275,6 +275,9 @@ class MainWindow(QMainWindow):
         # ── Bridge toolbar state ──────────────────────────────────────────
         # True when there are staged bridges and the toolbar button acts as "Confirm"
         self._bridge_confirming: bool = False
+        # Set when the user clicks Cancel; cleared by _cleanup_worker_thread.
+        # Blocks _on_file_opened during the ~2s the worker thread needs to exit.
+        self._cancelling: bool = False
 
         # ── Background erase state ────────────────────────────────────────
         # Original PIL Image (pre-processing) — used for colour sampling in erase mode
@@ -966,8 +969,9 @@ class MainWindow(QMainWindow):
         """
         # Ignore drops/opens that arrive while a pipeline run is already in
         # progress — otherwise the finished handler loads the wrong image's paths.
-        if self._worker_thread and self._worker_thread.isRunning():
-            self._set_status("Pipeline is busy — wait for it to finish before opening another image")
+        if self._cancelling or (self._worker_thread and self._worker_thread.isRunning()):
+            self._set_status("Cancelling — please wait a moment…" if self._cancelling
+                             else "Pipeline is busy — wait for it to finish before opening another image")
             return
         # Cancel any pending settings re-run queued from the previous image
         self._settings_timer.stop()
@@ -1763,6 +1767,7 @@ class MainWindow(QMainWindow):
     @pyqtSlot()
     def _on_cancel_pipeline(self) -> None:
         """Cancel the running pipeline and restore the UI."""
+        self._cancelling = True
         if self._worker:
             self._worker.cancel()
         self._set_busy(False)
@@ -2015,6 +2020,7 @@ class MainWindow(QMainWindow):
         worker = self._worker
         self._worker_thread = None
         self._worker = None
+        self._cancelling = False   # allow file opens again after cancel settles
         if worker is not None:
             worker.deleteLater()
         if thread is not None:

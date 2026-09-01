@@ -4,7 +4,7 @@ build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "bridgeit"
-version = "1.6.8"
+version = "1.6.9"
 description = "Convert images to fabrication-ready SVGs with automatic bridge generation"
 readme = "README.md"
 license = {text = "MIT"}

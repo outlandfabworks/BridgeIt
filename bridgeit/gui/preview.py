@@ -237,6 +237,7 @@ class ImagePreview(QLabel):
         pw, ph = self._pixmap.width(), self._pixmap.height()  # size of the image
 
         if pw == 0 or ph == 0:
+            painter.end()
             return
 
         # Compute the scale needed to fit the image in the window, then apply zoom.
