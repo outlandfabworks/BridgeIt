@@ -1217,9 +1217,10 @@ class MainWindow(QMainWindow):
             self._set_status("No image to export — run the pipeline first", error=True)
             return
 
-        default_name = "image.svg"
+        default_name = "image_vector.svg"
         if self._last_result and self._last_result.source_path:
-            default_name = str(self._last_result.source_path.with_suffix(".svg"))
+            stem = self._last_result.source_path.stem
+            default_name = str(self._last_result.source_path.with_name(f"{stem}_image.svg"))
 
         path, _ = QFileDialog.getSaveFileName(
             self,
@@ -1736,7 +1737,15 @@ class MainWindow(QMainWindow):
     def _show_pipeline_error(self, message: str) -> None:
         """Show a pipeline error in a themed QMessageBox with traceback in Details."""
         lines = message.strip().splitlines()
-        summary = lines[0] if lines else "An unknown error occurred"
+        # Subprocess errors arrive as full tracebacks — the first line is always
+        # "Traceback (most recent call last):" which is not a useful summary.
+        # Walk backwards to find the last non-empty line (the actual error message).
+        summary = "An unknown error occurred"
+        for line in reversed(lines):
+            line = line.strip()
+            if line:
+                summary = line
+                break
         self._set_status(f"Error: {summary}", error=True)
         dlg = QMessageBox(self)
         dlg.setWindowTitle("Pipeline Error")
@@ -1943,7 +1952,9 @@ class MainWindow(QMainWindow):
                 keep_btn = dlg.addButton("Keep Selection", QMessageBox.ButtonRole.RejectRole)
                 _apply_dialog_theme(dlg)
                 dlg.exec()
-                if dlg.clickedButton() == keep_btn:
+                clicked = dlg.clickedButton()
+                if clicked is None or clicked == keep_btn:
+                    # None = Escape/dismiss — treat as "keep" rather than clearing
                     self._btn_crop.setChecked(True)
                     return
             self._lasso_points = None
@@ -2232,6 +2243,11 @@ class MainWindow(QMainWindow):
                 self._worker.error.disconnect(self._on_pipeline_error)
             except Exception:
                 pass
+            # Cancel the subprocess first — without this, quit() has no effect on
+            # the blocking q.get() loop and wait() times out while the child process
+            # (non-daemon) keeps the Python interpreter alive after the window closes.
+            if self._worker:
+                self._worker.cancel()
             self._worker_thread.quit()
             self._worker_thread.wait(3000)
         if self._update_checker and self._update_checker.isRunning():

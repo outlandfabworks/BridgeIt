@@ -1021,12 +1021,7 @@ class InteractiveCanvas(QGraphicsView):
             act_del.triggered.connect(self.delete_selected)
         menu.addSeparator()
         act_fit = menu.addAction("Fit to Window  (Home)")
-        act_fit.triggered.connect(
-            lambda: self.fitInView(
-                self._scene.itemsBoundingRect(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-            )
-        )
+        act_fit.triggered.connect(self.fit_view)
         menu.exec(event.globalPos())
 
     def resizeEvent(self, event) -> None:
