@@ -1039,7 +1039,10 @@ class MainWindow(QMainWindow):
                 self._btn_view_svg.setEnabled(True)
                 self._btn_delete.setEnabled(True)
                 self._btn_add_bridge.setEnabled(True)
-                self._btn_auto_bridge.setEnabled(True)
+                has_prev_islands = bool(
+                    self._last_result.analysis and self._last_result.analysis.islands
+                )
+                self._btn_auto_bridge.setEnabled(has_prev_islands)
                 self._btn_erase.setEnabled(self._nobg_image is not None)
                 self._btn_crop.setEnabled(True)
                 self._controls.set_controls_enabled(True)
@@ -1644,7 +1647,10 @@ class MainWindow(QMainWindow):
                 self._btn_view_svg.setEnabled(True)
                 self._btn_delete.setEnabled(True)
                 self._btn_add_bridge.setEnabled(True)
-                self._btn_auto_bridge.setEnabled(True)
+                has_prev_islands = bool(
+                    self._last_result.analysis and self._last_result.analysis.islands
+                )
+                self._btn_auto_bridge.setEnabled(has_prev_islands)
             # Always re-enable settings controls so the user can adjust and retry
             self._controls.set_controls_enabled(True)
             return
@@ -1729,10 +1735,18 @@ class MainWindow(QMainWindow):
         # If a previous successful result exists, re-enable the export and editing
         # buttons so the user can still work with the last good output without
         # restarting the app.
-        if self._last_result:
+        if self._last_result and self._last_result.bridge_result:
             self._btn_export.setEnabled(True)
             self._btn_export_image.setEnabled(True)
             self._btn_export_dxf.setEnabled(True)
+            self._btn_view_svg.setEnabled(True)
+            self._btn_delete.setEnabled(True)
+            self._btn_add_bridge.setEnabled(True)
+            has_prev_islands = bool(
+                self._last_result.analysis and self._last_result.analysis.islands
+            )
+            self._btn_auto_bridge.setEnabled(has_prev_islands)
+        if self._last_result:
             self._btn_erase.setEnabled(True)
             self._btn_crop.setEnabled(True)
             self._controls.set_controls_enabled(True)
@@ -1780,7 +1794,10 @@ class MainWindow(QMainWindow):
             self._btn_view_svg.setEnabled(True)
             self._btn_delete.setEnabled(True)
             self._btn_add_bridge.setEnabled(True)
-            self._btn_auto_bridge.setEnabled(True)
+            has_prev_islands = bool(
+                self._last_result.analysis and self._last_result.analysis.islands
+            )
+            self._btn_auto_bridge.setEnabled(has_prev_islands)
 
     @pyqtSlot()
     def _on_undo(self) -> None:
